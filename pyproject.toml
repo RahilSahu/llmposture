@@ -39,7 +39,7 @@ where = ["src"]
 llmposture = ["probe_data/*.yaml"]
 
 [tool.vercel]
-entrypoint = "api:app"
+entrypoint = "api.index:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
