@@ -10,7 +10,7 @@ handling. Every category maps to the OWASP Top 10 for LLM Applications
 
 ```text
 $ llmposture scan --target mock-weak
-LLMPosture 1.0.0 scanning mock-weak (built-in)
+LLMPosture 1.1.0 scanning mock-weak (built-in)
 44 probes loaded; canaries generated for this run
   direct_injection       pass 0   fail 6   error 0
   encoding               pass 0   fail 7   error 0

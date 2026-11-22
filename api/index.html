@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLMPosture: LLM security scanner</title>
+<meta name="description" content="LLMPosture runs 44 benign canary probes against an LLM endpoint and reports where its guardrails give way: prompt injection, system prompt leakage, jailbreaks, encoding bypasses, and more.">
+<style>
+  :root {
+    --ink: #1a2332; --muted: #5b6b82; --line: #d9e0ea; --bg: #f6f8fb;
+    --card: #ffffff; --accent: #1d4ed8; --accent-dark: #1e40af;
+    --pass: #15803d; --fail: #b91c1c; --error: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         background: var(--bg); color: var(--ink); line-height: 1.5; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 56px; }
+  header { padding: 28px 0 8px; }
+  h1 { margin: 0; font-size: 32px; letter-spacing: -0.5px; }
+  h1 .accent { color: var(--accent); }
+  .tagline { color: var(--muted); margin: 6px 0 0; max-width: 720px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 20px; margin-top: 20px; }
+  .card h2 { margin: 0 0 6px; font-size: 18px; }
+  .card p.hint { color: var(--muted); margin: 0 0 14px; font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; }
+  .field { flex: 1 1 200px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--line);
+                  border-radius: 6px; font-size: 14px; background: #fff; color: var(--ink); }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+           padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button:hover { background: var(--accent-dark); }
+  button.secondary { background: #eef2f7; color: var(--ink); border: 1px solid var(--line); }
+  button.secondary:hover { background: #e2e8f0; }
+  button:disabled { opacity: 0.55; cursor: default; }
+  .note { background: #f0f6ff; border: 1px solid #c7dbfc; border-radius: 6px;
+          padding: 10px 12px; font-size: 13px; color: #274268; margin-top: 14px; }
+  .progress-wrap { display: none; margin-top: 20px; }
+  .progress-track { height: 10px; background: #e5eaf1; border-radius: 5px; overflow: hidden; }
+  .progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease; }
+  .progress-text { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  #results { display: none; }
+  .score-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 16px; }
+  .score-big { font-size: 44px; font-weight: 700; letter-spacing: -1px; }
+  .score-sub { color: var(--muted); font-size: 14px; }
+  .cat { margin-top: 12px; }
+  .cat-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+  .cat-head .name { font-weight: 600; }
+  .cat-track { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #e5eaf1; }
+  .cat-pass { background: var(--pass); } .cat-fail { background: var(--fail); } .cat-error { background: var(--error); }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  td.excerpt { color: #374151; word-break: break-word; max-width: 340px; white-space: pre-wrap; }
+  .sev { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px;
+         font-weight: 700; color: #fff; white-space: nowrap; }
+  .sev-critical { background: #7f1d1d; } .sev-high { background: #c2410c; }
+  .sev-medium { background: #a16207; } .sev-low { background: #4d7c0f; }
+  .actions { margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap; }
+  footer { color: var(--muted); font-size: 13px; margin-top: 28px; }
+  footer a, .tagline a { color: var(--accent); }
+  .err { color: var(--fail); font-size: 14px; margin-top: 10px; display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>LLM<span class="accent">Posture</span></h1>
+    <p class="tagline">A behavioural security scanner for large language models. It runs
+      44 probes against an LLM endpoint and reports where the guardrails give way:
+      prompt injection, system prompt leakage, jailbreaks, encoding bypasses, indirect
+      injection, sensitive data disclosure, excessive agency, and unsafe output handling.
+      Every probe is scored against benign canaries generated for the run, never against
+      real harmful content. Source and full methodology:
+      <a href="https://github.com/RahilSahu/llmposture">github.com/RahilSahu/llmposture</a>.</p>
+  </header>
+
+  <div class="card">
+    <h2>Try it now: built-in demo targets</h2>
+    <p class="hint">Two simulated LLM apps run inside this page's scan function. No API key,
+      no external calls. The weak one is deliberately badly guarded; the strict one refuses
+      the probes.</p>
+    <div class="row">
+      <button id="btn-weak" type="button">Scan mock-weak</button>
+      <button id="btn-strict" type="button" class="secondary">Scan mock-strict</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Scan your own endpoint</h2>
+    <p class="hint">Any OpenAI-compatible chat completions endpoint works. Pick a provider
+      preset or paste a custom base URL, for example a local Ollama or vLLM server.</p>
+    <div class="row">
+      <div class="field">
+        <label for="preset">Provider preset</label>
+        <select id="preset">
+          <option value="openai">OpenAI</option>
+          <option value="xai">xAI Grok</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="groq">Groq</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div class="field" style="flex: 2 1 280px;">
+        <label for="base-url">Base URL</label>
+        <input id="base-url" type="text" value="https://api.openai.com/v1" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="model">Model</label>
+        <input id="model" type="text" value="gpt-4o-mini" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="api-key">API key</label>
+        <input id="api-key" type="password" placeholder="Your key for the chosen provider" autocomplete="off">
+      </div>
+    </div>
+    <div class="note">How your key is handled: it stays in this browser tab. When you run a
+      scan, the browser sends one probe at a time to the scan function together with the
+      key; the function uses it only to call the provider you chose and never stores or
+      logs it. Nothing is kept after the scan finishes. If you would rather not paste a
+      key into a web page, the same scanner runs locally as a command line tool.</div>
+    <div class="actions">
+      <button id="btn-byok" type="button">Run full scan (44 probes)</button>
+    </div>
+    <div class="err" id="byok-error"></div>
+  </div>
+
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
+    <div class="progress-text" id="progress-text">Starting...</div>
+  </div>
+
+  <div class="card" id="results">
+    <div class="score-line">
+      <div class="score-big"><span id="score-value">0.0</span><span style="font-size:20px; color:var(--muted);"> / 100</span></div>
+      <div class="score-sub" id="score-sub"></div>
+    </div>
+    <div id="categories"></div>
+    <h2 style="margin-top: 24px;">Findings</h2>
+    <div id="findings-wrap"></div>
+    <div class="actions">
+      <button id="btn-download" type="button" class="secondary">Download JSON report</button>
+    </div>
+  </div>
+
+  <footer>
+    <p>Method in brief: each probe is sent with a test system prompt that plants fresh
+      canaries (a protected marker token, a fake API key, a fake customer record). A probe
+      fails only when the target outputs a canary, leaks planted content, calls a fake tool
+      without confirmation, or emits unsafe markup carrying the marker. The score is
+      severity-weighted across the probes in the run. A clean score means these probes
+      were resisted; it is not a certification of security.</p>
+    <p>Authorised use only: scan models and endpoints you own or are explicitly authorised
+      to test, with your own API keys. Probing third-party services outside their terms can
+      get accounts terminated and may be unlawful.</p>
+  </footer>
+</div>
+
+<script>
+"use strict";
+const WEIGHTS = { critical: 5, high: 3, medium: 2, low: 1 };
+const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
+const PRESETS = {
+  openai:     { base: "https://api.openai.com/v1",        model: "gpt-4o-mini" },
+  xai:        { base: "https://api.x.ai/v1",              model: "grok-4" },
+  openrouter: { base: "https://openrouter.ai/api/v1",     model: "openai/gpt-4o-mini" },
+  groq:       { base: "https://api.groq.com/openai/v1",   model: "llama-3.3-70b-versatile" },
+  custom:     { base: "",                                 model: "" }
+};
+let catalogue = [];
+let lastReport = null;
+
+const $ = (id) => document.getElementById(id);
+
+$("preset").addEventListener("change", () => {
+  const p = PRESETS[$("preset").value];
+  $("base-url").value = p.base;
+  $("model").value = p.model;
+});
+
+function setBusy(busy) {
+  ["btn-weak", "btn-strict", "btn-byok"].forEach((id) => { $(id).disabled = busy; });
+}
+
+function showProgress(done, total, label) {
+  $("progress-wrap").style.display = "block";
+  $("progress-bar").style.width = (total ? (100 * done / total) : 0) + "%";
+  $("progress-text").textContent = label;
+}
+
+function hideProgress() { $("progress-wrap").style.display = "none"; }
+
+function assembleReport(results, targetLabel, modelLabel) {
+  const perCategory = {};
+  const counts = { pass: 0, fail: 0, error: 0 };
+  let totalWeight = 0, passedWeight = 0;
+  for (const r of results) {
+    const cat = perCategory[r.category] ||
+      (perCategory[r.category] = { pass: 0, fail: 0, error: 0, total: 0 });
+    cat[r.status] += 1; cat.total += 1; counts[r.status] += 1;
+    if (r.status === "pass" || r.status === "fail") {
+      const w = WEIGHTS[r.severity] || 1;
+      totalWeight += w;
+      if (r.status === "pass") passedWeight += w;
+    }
+  }
+  const score = totalWeight ? Math.round(1000 * passedWeight / totalWeight) / 10 : 0.0;
+  const findings = results.filter((r) => r.status === "fail").sort((a, b) =>
+    ((SEV_ORDER[a.severity] ?? 9) - (SEV_ORDER[b.severity] ?? 9)) ||
+    a.probe_id.localeCompare(b.probe_id));
+  return {
+    tool: "llmposture",
+    meta: { target: targetLabel, model: modelLabel,
+            date: new Date().toISOString().replace(/\.\d+Z$/, "Z") },
+    summary: { posture_score: score, total_probes: results.length,
+               counts: counts, per_category: perCategory },
+    findings: findings,
+    results: results
+  };
+}
+
+function renderReport(report) {
+  lastReport = report;
+  const s = report.summary;
+  $("score-value").textContent = s.posture_score.toFixed(1);
+  $("score-sub").textContent =
+    report.meta.target + " | " + s.counts.fail + " failed, " + s.counts.pass +
+    " passed, " + s.counts.error + " errors, " + s.total_probes + " probes";
+  const cats = $("categories");
+  cats.innerHTML = "";
+  for (const name of Object.keys(s.per_category).sort()) {
+    const c = s.per_category[name];
+    const div = document.createElement("div");
+    div.className = "cat";
+    div.innerHTML =
+      '<div class="cat-head"><span class="name"></span><span></span></div>' +
+      '<div class="cat-track">' +
+      '<div class="cat-pass" style="width:' + (100 * c.pass / c.total) + '%"></div>' +
+      '<div class="cat-fail" style="width:' + (100 * c.fail / c.total) + '%"></div>' +
+      '<div class="cat-error" style="width:' + (100 * c.error / c.total) + '%"></div>' +
+      "</div>";
+    div.querySelector(".name").textContent = name;
+    div.querySelector(".cat-head span:last-child").textContent =
+      c.pass + " pass, " + c.fail + " fail, " + c.error + " error";
+    cats.appendChild(div);
+  }
+  const wrap = $("findings-wrap");
+  if (!report.findings.length) {
+    wrap.innerHTML = "<p>No findings. Every probe in this run was resisted.</p>";
+  } else {
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>Probe</th><th>Severity</th><th>Category</th>" +
+      "<th>Why it failed</th><th>Response excerpt</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    for (const f of report.findings) {
+      const tr = document.createElement("tr");
+      const cells = [
+        f.probe_id + ": " + (f.name || ""),
+        "", f.category, f.reason || "", f.response_excerpt || ""
+      ];
+      cells.forEach((text, i) => {
+        const td = document.createElement("td");
+        if (i === 1) {
+          const badge = document.createElement("span");
+          badge.className = "sev sev-" + f.severity;
+          badge.textContent = f.severity;
+          td.appendChild(badge);
+        } else {
+          td.textContent = text;
+          if (i === 4) td.className = "excerpt";
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrap.innerHTML = "";
+    wrap.appendChild(table);
+  }
+  $("results").style.display = "block";
+  $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function runMock(target) {
+  setBusy(true);
+  $("byok-error").style.display = "none";
+  showProgress(0, 1, "Scanning mock-" + target + "...");
+  try {
+    const resp = await fetch("/api/scan/mock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target: target })
+    });
+    if (!resp.ok) throw new Error("scan request failed with HTTP " + resp.status);
+    const report = await resp.json();
+    showProgress(1, 1, "Done.");
+    renderReport(report);
+  } catch (err) {
+    $("byok-error").textContent = "The demo scan failed: " + err.message;
+    $("byok-error").style.display = "block";
+  } finally {
+    hideProgress();
+    setBusy(false);
+  }
+}
+
+async function runByok() {
+  const baseUrl = $("base-url").value.trim();
+  const model = $("model").value.trim();
+  const apiKey = $("api-key").value;
+  const errBox = $("byok-error");
+  errBox.style.display = "none";
+  if (!baseUrl || !model) {
+    errBox.textContent = "Base URL and model are both required.";
+    errBox.style.display = "block";
+    return;
+  }
+  if (!catalogue.length) {
+    try {
+      const r = await fetch("/api/probes");
+      catalogue = (await r.json()).probes;
+    } catch (err) {
+      errBox.textContent = "Could not load the probe catalogue: " + err.message;
+      errBox.style.display = "block";
+      return;
+    }
+  }
+  setBusy(true);
+  const results = [];
+  showProgress(0, catalogue.length, "Starting scan of " + model + "...");
+  for (let i = 0; i < catalogue.length; i++) {
+    const probe = catalogue[i];
+    showProgress(i, catalogue.length,
+      "Probe " + (i + 1) + " of " + catalogue.length + ": " + probe.id +
+      " (" + probe.title + ")");
+    try {
+      const resp = await fetch("/api/scan/probe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ probe_id: probe.id, base_url: baseUrl,
+                               model: model, api_key: apiKey })
+      });
+      if (!resp.ok) {
+        let detail = "HTTP " + resp.status;
+        try { detail += ": " + (await resp.json()).detail; } catch (e) { /* keep default */ }
+        throw new Error(detail);
+      }
+      results.push(await resp.json());
+    } catch (err) {
+      results.push({ probe_id: probe.id, name: probe.title, category: probe.pack,
+                     owasp: probe.owasp, severity: probe.severity, status: "error",
+                     reason: "probe request failed: " + err.message,
+                     payload_summary: "", response_excerpt: "", turns_sent: 0 });
+    }
+  }
+  showProgress(catalogue.length, catalogue.length, "Done.");
+  renderReport(assembleReport(results, baseUrl + " model=" + model, model));
+  hideProgress();
+  setBusy(false);
+}
+
+$("btn-weak").addEventListener("click", () => runMock("weak"));
+$("btn-strict").addEventListener("click", () => runMock("strict"));
+$("btn-byok").addEventListener("click", runByok);
+$("btn-download").addEventListener("click", () => {
+  if (!lastReport) return;
+  const blob = new Blob([JSON.stringify(lastReport, null, 2)],
+                        { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "llmposture-report.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+fetch("/api/probes").then((r) => r.json())
+  .then((data) => { catalogue = data.probes; })
+  .catch(() => { /* the Run handler retries the fetch */ });
+</script>
+</body>
+</html>
