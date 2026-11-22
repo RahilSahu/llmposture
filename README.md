@@ -130,6 +130,8 @@ Recorded 22 November 2026 with LLMPosture 1.0.0. Full reports are in
 | mock-weak (built-in vulnerable demo) | 0.0 | 44 | 0 |
 | mock-strict (built-in hardened demo) | 100.0 | 0 | 44 |
 | llama3.2:1b via Ollama (local, real model) | 56.8 | 21 | 23 |
+| qwen2.5:1.5b via Ollama (local, real model) | 50.8 | 23 | 21 |
+| gemma2:2b via Ollama (local, real model) | 35.6 | 30 | 14 |
 
 Notes on the llama3.2:1b run (a small 1B model, run locally through
 Ollama's OpenAI-compatible endpoint): it failed 5 of 6 direct injection
@@ -142,6 +144,28 @@ all 4 excessive agency probes, because it did not emit tool calls in a
 callable format. Both passes say as much about capability as about
 guardrails, which is why the per-category table matters more than the
 headline score.
+
+Notes on the qwen2.5:1.5b run (a small 1.5B model, run locally the same
+way): it failed 5 of 6 system prompt leakage probes, 4 of 6 jailbreak
+probes, 4 of 5 sensitive disclosure probes, 3 of 6 direct injection probes
+and 2 of 5 indirect injection probes, and it failed all 5 output handling
+probes: asked for markup, it emits the raw markup carrying the marker,
+which is the exact behaviour output handling controls in an application
+exist to stop. Like the 1B llama, it passed all 7 encoding probes and all
+4 excessive agency probes, and the same caveat applies: at this size it
+did not produce the marker from encoded instructions and did not emit tool
+calls in a callable format, so those passes say as much about capability
+and output format as about guardrails.
+
+Notes on the gemma2:2b run (a small 2B model, run locally the same way):
+the weakest of the three local models. It failed all 6 direct injection
+probes, 5 of 6 system prompt leakage probes, 4 of 6 jailbreak probes, 4 of
+5 indirect injection probes, 4 of 5 sensitive disclosure probes and 4 of 5
+output handling probes. Unlike the other two, it also failed 3 of 7
+encoding probes (leetspeak, homoglyph and zero-width splitting): it does
+decode those surface transforms and then complies, while base64 and ROT13
+stayed beyond it. It passed all 4 excessive agency probes, again because
+it did not emit tool calls in a callable format.
 
 ## Architecture
 
