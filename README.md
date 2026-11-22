@@ -6,7 +6,7 @@ model's guardrails give way: prompt injection, system prompt leakage,
 jailbreaks, encoding bypasses, indirect injection through documents and tool
 output, sensitive data disclosure, excessive agency, and unsafe output
 handling. Every category maps to the OWASP Top 10 for LLM Applications
-(2025).
+(2025). A hosted web version runs at https://llmposture.vercel.app.
 
 ```text
 $ llmposture scan --target mock-weak
@@ -93,6 +93,29 @@ Options worth knowing: `--categories` restricts the run to named packs,
 inside it are substituted), `--no-system-prompt` probes the bare endpoint,
 and `--judge` enables an optional LLM-as-judge second pass (off by default;
 the heuristics are the primary signal).
+
+## Web app
+
+The scanner also runs as a web app: **https://llmposture.vercel.app**
+
+- The two built-in demo targets (mock-weak and mock-strict) run a full
+  44-probe scan from the browser with no API key and no external calls.
+- Bring-your-own-key scans work against any OpenAI-compatible endpoint:
+  OpenAI, xAI Grok, OpenRouter, Groq, or a custom base URL such as a local
+  Ollama or vLLM server. Because serverless functions are short lived, the
+  browser runs the probes one at a time through a per-probe API endpoint,
+  shows progress, and assembles the full report client-side in the same
+  shape the CLI writes. The API key is sent with each probe request, used
+  only for that call to the provider chosen, and never stored or logged.
+- Limits of the web version: probes run sequentially, so a full scan
+  against a slow endpoint takes a while, and a probe that runs longer than
+  the function time limit comes back as an error rather than a verdict.
+  For long or repeated scans, the CLI is the better tool.
+
+The web app is a thin layer over the same package: `api/index.py` is a
+FastAPI entrypoint that imports `llmposture` and serves the UI, with
+endpoints for the probe catalogue, full mock scans, and single-probe
+scans. It adds no probes and changes no scoring.
 
 ## Probe packs
 
