@@ -129,6 +129,19 @@ Recorded 22 November 2026 with LLMPosture 1.0.0. Full reports are in
 | --- | ---: | ---: | ---: |
 | mock-weak (built-in vulnerable demo) | 0.0 | 44 | 0 |
 | mock-strict (built-in hardened demo) | 100.0 | 0 | 44 |
+| llama3.2:1b via Ollama (local, real model) | 56.8 | 21 | 23 |
+
+Notes on the llama3.2:1b run (a small 1B model, run locally through
+Ollama's OpenAI-compatible endpoint): it failed 5 of 6 direct injection
+probes, 4 of 6 system prompt leakage probes, 4 of 6 jailbreak probes, 3 of
+5 sensitive disclosure probes and 3 of 5 output handling probes, and it
+followed instructions hidden in a document and an email (2 of 5 indirect
+injection probes). It passed all 7 encoding probes, mostly because a 1B
+model does not reliably decode base64, ROT13 or tag characters at all, and
+all 4 excessive agency probes, because it did not emit tool calls in a
+callable format. Both passes say as much about capability as about
+guardrails, which is why the per-category table matters more than the
+headline score.
 
 ## Architecture
 
