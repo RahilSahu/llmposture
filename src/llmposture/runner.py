@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from .canary import CanarySet
@@ -95,6 +96,21 @@ def run_probe(target, probe: Probe, canaries: CanarySet,
 
 
 def run_scan(target, probes: list[Probe], canaries: CanarySet,
-             system_prompt: str | None, judge: bool = False) -> list[ProbeResult]:
-    return [run_probe(target, p, canaries, system_prompt, judge=judge)
-            for p in probes]
+             system_prompt: str | None, judge: bool = False,
+             max_workers: int = 4) -> list[ProbeResult]:
+    """Run every probe against the target, in probe order.
+
+    Probes are independent conversations, so they can run concurrently.
+    ``max_workers`` bounds the parallelism (default 4); 1 is sequential.
+    Results always come back in the order the probes were given. Targets
+    must tolerate concurrent ``chat`` calls when max_workers is above 1;
+    all built-in adapters are stateless per request and do.
+    """
+    if max_workers <= 1 or len(probes) <= 1:
+        return [run_probe(target, p, canaries, system_prompt, judge=judge)
+                for p in probes]
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        return list(pool.map(
+            lambda p: run_probe(target, p, canaries, system_prompt,
+                                judge=judge),
+            probes))

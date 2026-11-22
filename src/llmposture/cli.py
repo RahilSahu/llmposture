@@ -4,6 +4,11 @@ Usage:
     llmposture scan --target mock-weak
     llmposture scan --target openai-compatible --base-url http://localhost:11434/v1 --model llama3.2:1b
     llmposture scan --target openai-compatible --base-url https://api.openai.com/v1 --model gpt-4o-mini --api-key-env OPENAI_API_KEY
+    llmposture scan --target anthropic --model claude-sonnet-4-5
+    llmposture scan --target gemini --model gemini-2.5-flash
+    llmposture scan --target ollama-native --model llama3.2:1b
+    llmposture scan --target mock-strict --fail-under 90 --jobs 4
+    llmposture compare old-report.json new-report.json
     llmposture list-probes
     llmposture serve-mock --mode weak --port 8000
 """
@@ -18,12 +23,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import __version__
 from .canary import CanarySet, default_system_prompt
+from .compare import compare_reports, render_compare_markdown
 from .mock import MockTarget
 from .probes import CATEGORIES, load_probes
-from .report import build_report, write_json, write_markdown
+from .report import build_report, write_html, write_json, write_markdown
 from .runner import run_scan
 from .scoring import summarize
-from .targets import OpenAICompatibleTarget
+from .targets import (AnthropicTarget, GeminiTarget, OllamaNativeTarget,
+                    OpenAICompatibleTarget)
 
 
 def _cmd_list_probes(args) -> int:
@@ -39,12 +46,33 @@ def _build_target(args, canaries: CanarySet):
         return MockTarget("weak", canaries), "mock-weak (built-in)"
     if args.target == "mock-strict":
         return MockTarget("strict", canaries), "mock-strict (built-in)"
-    if not args.base_url or not args.model:
-        raise SystemExit("--base-url and --model are required for "
-                         "the openai-compatible target")
+    if not args.model:
+        raise SystemExit("--model is required for real targets")
+    if args.target == "anthropic":
+        target = AnthropicTarget(
+            model=args.model, api_key_env=args.api_key_env or "ANTHROPIC_API_KEY",
+            base_url=args.base_url or "https://api.anthropic.com/v1",
+            timeout=args.timeout)
+        return target, f"anthropic model={args.model}"
+    if args.target == "gemini":
+        target = GeminiTarget(
+            model=args.model, api_key_env=args.api_key_env or "GEMINI_API_KEY",
+            base_url=args.base_url
+            or "https://generativelanguage.googleapis.com/v1beta",
+            timeout=args.timeout)
+        return target, f"gemini model={args.model}"
+    if args.target == "ollama-native":
+        base = args.base_url or "http://localhost:11434"
+        target = OllamaNativeTarget(model=args.model, base_url=base,
+                                    timeout=args.timeout)
+        return target, f"{base} (native) model={args.model}"
+    if not args.base_url:
+        raise SystemExit("--base-url is required for the "
+                         "openai-compatible target")
     target = OpenAICompatibleTarget(
         base_url=args.base_url, model=args.model,
-        api_key_env=args.api_key_env, timeout=args.timeout)
+        api_key_env=args.api_key_env or "OPENAI_API_KEY",
+        timeout=args.timeout)
     return target, f"{args.base_url} model={args.model}"
 
 
@@ -65,7 +93,8 @@ def _cmd_scan(args) -> int:
 
     print(f"LLMPosture {__version__} scanning {target_label}")
     print(f"{len(probes)} probes loaded; canaries generated for this run")
-    results = run_scan(target, probes, canaries, system_prompt, judge=args.judge)
+    results = run_scan(target, probes, canaries, system_prompt,
+                       judge=args.judge, max_workers=args.jobs)
     summary = summarize(results)
 
     meta = {
@@ -79,13 +108,48 @@ def _cmd_scan(args) -> int:
     report = build_report(meta, results, summary)
     write_json(args.out + ".json", report)
     write_markdown(args.out + ".md", report)
+    write_html(args.out + ".html", report)
 
     for category, c in sorted(summary["per_category"].items()):
         print(f"  {category:<22} pass {c['pass']:<3} fail {c['fail']:<3} "
               f"error {c['error']}")
     print(f"Posture score: {summary['posture_score']} / 100 "
           f"({summary['counts']['fail']} findings)")
-    print(f"Reports written to {args.out}.json and {args.out}.md")
+    print(f"Reports written to {args.out}.json, {args.out}.md "
+          f"and {args.out}.html")
+    if args.fail_under is not None and summary["posture_score"] < args.fail_under:
+        print(f"FAIL: posture score {summary['posture_score']} is below "
+              f"the --fail-under threshold {args.fail_under}")
+        return 1
+    return 0
+
+
+def _cmd_compare(args) -> int:
+    with open(args.old, "r", encoding="utf-8") as fh:
+        old = json.load(fh)
+    with open(args.new, "r", encoding="utf-8") as fh:
+        new = json.load(fh)
+    comp = compare_reports(old, new)
+    print(f"Old: {comp['old']['target']} ({comp['old']['date']}), "
+          f"score {comp['old']['posture_score']}")
+    print(f"New: {comp['new']['target']} ({comp['new']['date']}), "
+          f"score {comp['new']['posture_score']}")
+    print(f"Posture delta: {comp['score_delta']:+} "
+          f"({comp['counts']['improved']} improved, "
+          f"{comp['counts']['regressed']} regressed, "
+          f"{comp['counts']['other_changes']} other changes)")
+    for category, c in sorted(comp["per_category"].items()):
+        print(f"  {category:<22} pass {c['old']['pass']} -> {c['new']['pass']} "
+              f"({c['pass_delta']:+}), fail {c['old']['fail']} -> "
+              f"{c['new']['fail']} ({c['fail_delta']:+})")
+    for c in comp["changed"]:
+        print(f"  {c['probe_id']}: {c['old_status']} -> {c['new_status']} "
+              f"({c['direction']})")
+    if args.out:
+        write_json(args.out + ".json", comp)
+        with open(args.out + ".md", "w", encoding="utf-8") as fh:
+            fh.write(render_compare_markdown(comp))
+        print(f"Comparison written to {args.out}.json and {args.out}.md")
     return 0
 
 
@@ -156,11 +220,17 @@ def main(argv=None) -> int:
 
     p_scan = sub.add_parser("scan", help="run probes against a target")
     p_scan.add_argument("--target", default="mock-weak",
-                        choices=["mock-weak", "mock-strict", "openai-compatible"])
-    p_scan.add_argument("--base-url", help="OpenAI-compatible base URL, e.g. http://localhost:11434/v1")
+                        choices=["mock-weak", "mock-strict",
+                                 "openai-compatible", "anthropic", "gemini",
+                                 "ollama-native"])
+    p_scan.add_argument("--base-url", help="base URL for the target API, e.g. http://localhost:11434/v1 (defaults per target)")
     p_scan.add_argument("--model", help="model name for the target endpoint")
-    p_scan.add_argument("--api-key-env", default="OPENAI_API_KEY",
-                        help="environment variable holding the API key (default OPENAI_API_KEY)")
+    p_scan.add_argument("--api-key-env",
+                        help="environment variable holding the API key (default: OPENAI_API_KEY, ANTHROPIC_API_KEY or GEMINI_API_KEY, per target)")
+    p_scan.add_argument("--jobs", type=int, default=4,
+                        help="probes to run concurrently (default 4; 1 is sequential, kinder to local endpoints)")
+    p_scan.add_argument("--fail-under", type=float, default=None,
+                        help="CI mode: exit with status 1 when the posture score is below this threshold")
     p_scan.add_argument("--timeout", type=float, default=60.0)
     p_scan.add_argument("--categories", nargs="*", choices=list(CATEGORIES),
                         help="restrict to these probe categories")
@@ -173,6 +243,14 @@ def main(argv=None) -> int:
     p_scan.add_argument("--out", default="llmposture-report",
                         help="report path prefix (writes .json and .md)")
     p_scan.set_defaults(func=_cmd_scan)
+
+    p_compare = sub.add_parser(
+        "compare", help="diff two JSON scan reports (score and per-probe changes)")
+    p_compare.add_argument("old", help="older report JSON")
+    p_compare.add_argument("new", help="newer report JSON")
+    p_compare.add_argument("--out",
+                           help="also write the comparison to <out>.json and <out>.md")
+    p_compare.set_defaults(func=_cmd_compare)
 
     p_list = sub.add_parser("list-probes", help="list loaded probes")
     p_list.add_argument("--categories", nargs="*", choices=list(CATEGORIES))

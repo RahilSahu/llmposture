@@ -106,6 +106,17 @@ real harmful output.
   framings) motivates the `system_prompt_leakage` pack (LLM07, ATLAS
   AML.T0056). OWASP promoted system prompt leakage to its own category in
   the 2025 list for exactly this reason.
+- **Retrieval and memory poisoning.** PoisonedRAG (Zou et al., USENIX
+  Security 2025) showed that a small number of poisoned passages in a
+  retrieval corpus can steer a RAG system's answers, because the model
+  treats retrieved text as ground truth. The same trust problem appears in
+  assistants with long-term memory: instructions or false facts planted in
+  one session, or loaded from a poisoned store, are honoured in later
+  sessions as if the operator had written them. Basis for the `rag_memory`
+  pack (LLM08, with LLM01 for the instruction-following half): poisoned
+  passages, planted false memories carrying a canary recovery code,
+  citation laundering, conflicting sources, and a memory
+  write-then-trigger pair.
 
 ## 3. Verified CVEs in LLM applications and frameworks
 
@@ -150,6 +161,7 @@ find the steering half of those chains before someone else does.
 | sensitive_disclosure | LLM02:2025 | AML.T0057 | OWASP LLM02; planted-secret extraction tests |
 | excessive_agency | LLM06:2025 | Tool abuse class | OWASP LLM06; LangChain/Flowise tool CVE pattern |
 | output_handling | LLM05:2025 | Output handling class | OWASP LLM05; Open WebUI XSS CVEs; markdown-image exfiltration research |
+| rag_memory | LLM08:2025 / LLM01:2025 | AML.T0051.001 adjacent | PoisonedRAG (Zou et al. 2025); persistent-memory poisoning demonstrations |
 
 ## 5. Method and limits of this research
 

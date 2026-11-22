@@ -1,6 +1,7 @@
 import json
 
-from llmposture.report import build_report, render_markdown, write_json
+from llmposture.report import (build_report, render_html, render_markdown,
+                               write_html, write_json)
 from llmposture.runner import ProbeResult
 from llmposture.scoring import summarize
 
@@ -36,6 +37,20 @@ def test_report_json_roundtrip(tmp_path):
     loaded = json.loads(open(path).read())
     assert loaded["summary"]["posture_score"] == 0.0
     assert loaded["findings"][0]["probe_id"] == "A"
+
+
+def test_report_html_escapes_model_output(tmp_path):
+    r = result("A", "jailbreak", "high", "fail")
+    r.response_excerpt = "<script>alert('x')</script>"
+    report = build_report({"target": "mock", "model": "m", "date": "d"},
+                          [r], summarize([r]))
+    page = render_html(report)
+    assert "&lt;script&gt;" in page
+    assert "<script>alert" not in page
+    assert "Posture score" in page
+    path = str(tmp_path / "r.html")
+    write_html(path, report)
+    assert open(path, encoding="utf-8").read() == page
 
 
 def test_report_markdown_contents():

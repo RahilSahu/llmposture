@@ -68,7 +68,7 @@
   <header>
     <h1>LLM<span class="accent">Posture</span></h1>
     <p class="tagline">A behavioural security scanner for large language models. It runs
-      44 probes against an LLM endpoint and reports where the guardrails give way:
+      <span id="probe-count">76</span> probes against an LLM endpoint and reports where the guardrails give way:
       prompt injection, system prompt leakage, jailbreaks, encoding bypasses, indirect
       injection, sensitive data disclosure, excessive agency, and unsafe output handling.
       Every probe is scored against benign canaries generated for the run, never against
@@ -121,7 +121,7 @@
       logs it. Nothing is kept after the scan finishes. If you would rather not paste a
       key into a web page, the same scanner runs locally as a command line tool.</div>
     <div class="actions">
-      <button id="btn-byok" type="button">Run full scan (44 probes)</button>
+      <button id="btn-byok" type="button">Run full scan</button>
     </div>
     <div class="err" id="byok-error"></div>
   </div>
@@ -375,7 +375,11 @@ $("btn-download").addEventListener("click", () => {
 });
 
 fetch("/api/probes").then((r) => r.json())
-  .then((data) => { catalogue = data.probes; })
+  .then((data) => {
+    catalogue = data.probes;
+    $("probe-count").textContent = catalogue.length;
+    $("btn-byok").textContent = "Run full scan (" + catalogue.length + " probes)";
+  })
   .catch(() => { /* the Run handler retries the fetch */ });
 </script>
 </body>

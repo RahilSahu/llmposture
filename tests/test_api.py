@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from llmposture.probes import load_probes
 from llmposture.targets import TargetResponse
+
+TOTAL_PROBES = len(load_probes())
 
 _API_PATH = Path(__file__).resolve().parent.parent / "api" / "index.py"
 
@@ -29,7 +32,7 @@ def test_health():
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
-    assert body["probes"] == 44
+    assert body["probes"] == TOTAL_PROBES
 
 
 def test_index_serves_the_ui():
@@ -43,7 +46,7 @@ def test_probes_catalogue():
     resp = client.get("/api/probes")
     assert resp.status_code == 200
     probes = resp.json()["probes"]
-    assert len(probes) == 44
+    assert len(probes) == TOTAL_PROBES
     for p in probes:
         assert set(p) >= {"id", "pack", "severity", "title"}
     ids = [p["id"] for p in probes]
@@ -55,9 +58,9 @@ def test_scan_mock_weak_scores_zero():
     assert resp.status_code == 200
     report = resp.json()
     assert report["summary"]["posture_score"] == 0.0
-    assert report["summary"]["counts"]["fail"] == 44
-    assert len(report["findings"]) == 44
-    assert len(report["results"]) == 44
+    assert report["summary"]["counts"]["fail"] == TOTAL_PROBES
+    assert len(report["findings"]) == TOTAL_PROBES
+    assert len(report["results"]) == TOTAL_PROBES
 
 
 def test_scan_mock_strict_scores_100():

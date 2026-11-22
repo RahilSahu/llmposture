@@ -23,6 +23,7 @@ CATEGORIES = (
     "sensitive_disclosure",
     "excessive_agency",
     "output_handling",
+    "rag_memory",
 )
 
 SEVERITIES = ("critical", "high", "medium", "low")
