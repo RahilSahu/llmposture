@@ -10,7 +10,7 @@ handling. Every category maps to the OWASP Top 10 for LLM Applications
 
 ```text
 $ llmposture scan --target mock-weak
-LLMPosture 1.2.0 scanning mock-weak (built-in)
+LLMPosture 1.3.0 scanning mock-weak (built-in)
 76 probes loaded; canaries generated for this run
   direct_injection       pass 0   fail 9   error 0
   encoding               pass 0   fail 10  error 0
@@ -118,24 +118,52 @@ guardrail fix.
 
 The scanner also runs as a web app: **https://llmposture.vercel.app**
 
-- The two built-in demo targets (mock-weak and mock-strict) run a full
-  scan from the browser with no API key and no external calls.
-- Bring-your-own-key scans work against any OpenAI-compatible endpoint:
-  OpenAI, xAI Grok, OpenRouter, Groq, or a custom base URL such as a local
-  Ollama or vLLM server. Because serverless functions are short lived, the
-  browser runs the probes one at a time through a per-probe API endpoint,
-  shows progress, and assembles the full report client-side in the same
-  shape the CLI writes. The API key is sent with each probe request, used
-  only for that call to the provider chosen, and never stored or logged.
-- Limits of the web version: probes run sequentially, so a full scan
-  against a slow endpoint takes a while, and a probe that runs longer than
-  the function time limit comes back as an error rather than a verdict.
-  For long or repeated scans, the CLI is the better tool.
+- "Scan your LLM" is the main flow: paste an endpoint URL, pick the
+  model, optionally add an API key, choose probe packs, confirm you own
+  the endpoint or are authorised to test it, and the full 76-probe suite
+  runs against it. Findings come back grouped by pack with the OWASP
+  mapping, the evidence excerpt, and remediation guidance, and the
+  report downloads as JSON or HTML.
+- Endpoints: any OpenAI-compatible chat completions endpoint works
+  directly (OpenAI, xAI Grok, OpenRouter, Groq, a hosted vLLM), and
+  native adapters cover Anthropic, Google Gemini, and Ollama. The
+  adapter is auto-detected from the URL and can be overridden.
+- How it runs: serverless functions are short lived, so the browser
+  drives the scan in batches (8 probes per request; the batch endpoint
+  accepts up to 10, runs 4 concurrently, and applies a per-batch
+  deadline) through `POST /api/scan/batch`, shows live progress and
+  pass/fail counts with a cancel button, and assembles the full report
+  client-side in the same shape the CLI writes. Self-hosters scanning
+  slow local models can raise the two batch time limits through the
+  environment (`LLMPOSTURE_BATCH_PER_CALL_TIMEOUT`,
+  `LLMPOSTURE_BATCH_DEADLINE_SECONDS`); the public deployment runs the
+  defaults. The API key is sent only
+  with the scan requests, used only for the calls to the chosen
+  endpoint, and never stored or logged; result text is scrubbed of the
+  key server-side, and reports never contain it.
+- The two built-in demo targets (mock-weak and mock-strict) still run a
+  full scan from the browser with no API key and no external calls.
+- Safety limits of the hosted scanner: batch target URLs are
+  SSRF-checked. Only http and https, no embedded credentials, and the
+  host must resolve only to public addresses; loopback, private,
+  link-local and reserved ranges are refused, including 169.254.169.254
+  and cloud metadata hostnames, and outbound redirects are disabled so a
+  target cannot bounce a scan to a different host after validation. A
+  consequence: the hosted scanner cannot scan localhost or
+  private-network models. Run the web app locally for those; a
+  documented environment variable (`LLMPOSTURE_ALLOW_PRIVATE_TARGETS=1`)
+  relaxes the guard for local development only and must never be set on
+  a public deployment. Batch scans also carry a best-effort per-IP rate
+  limit (30 batch calls per 10 minutes); the counters are in-memory, so
+  on serverless infrastructure this blunts casual abuse rather than
+  enforcing a hard quota. A probe that runs longer than the batch
+  deadline comes back as an error rather than a verdict. For long or
+  repeated scans, the CLI is the better tool.
 
 The web app is a thin layer over the same package: `api/index.py` is a
 FastAPI entrypoint that imports `llmposture` and serves the UI, with
-endpoints for the probe catalogue, full mock scans, and single-probe
-scans. It adds no probes and changes no scoring.
+endpoints for the probe catalogue, full mock scans, single-probe scans,
+and batch scans. It adds no probes and changes no scoring.
 
 ## Probe packs
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LLMPosture: LLM security scanner</title>
-<meta name="description" content="LLMPosture runs 44 benign canary probes against an LLM endpoint and reports where its guardrails give way: prompt injection, system prompt leakage, jailbreaks, encoding bypasses, and more.">
+<meta name="description" content="LLMPosture is a security scanner for large language models. Paste your LLM endpoint URL, run the probe suite, and get a scored report of prompt injection, leakage, jailbreak and agency flaws, all tested with benign canaries.">
 <style>
   :root {
     --ink: #1a2332; --muted: #5b6b82; --line: #d9e0ea; --bg: #f6f8fb;
@@ -28,6 +28,7 @@
   label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
   input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--line);
                   border-radius: 6px; font-size: 14px; background: #fff; color: var(--ink); }
+  input[type="checkbox"] { width: auto; }
   button { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
            padding: 10px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
   button:hover { background: var(--accent-dark); }
@@ -36,23 +37,44 @@
   button:disabled { opacity: 0.55; cursor: default; }
   .note { background: #f0f6ff; border: 1px solid #c7dbfc; border-radius: 6px;
           padding: 10px 12px; font-size: 13px; color: #274268; margin-top: 14px; }
+  .packs { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 6px; }
+  .packs label { display: flex; align-items: center; gap: 6px; font-weight: 500;
+                 font-size: 13px; margin: 0; }
+  .packs .count { color: var(--muted); font-weight: 400; }
+  .authz { display: flex; gap: 8px; align-items: flex-start; margin-top: 16px;
+           font-size: 14px; }
+  .authz input { margin-top: 3px; }
+  .authz label { font-weight: 500; margin: 0; }
+  .key-row { display: flex; gap: 8px; align-items: center; }
+  .key-row input[type="password"], .key-row input[type="text"] { flex: 1; }
+  .key-toggle { display: flex; align-items: center; gap: 4px; font-size: 12px;
+                font-weight: 500; white-space: nowrap; }
   .progress-wrap { display: none; margin-top: 20px; }
   .progress-track { height: 10px; background: #e5eaf1; border-radius: 5px; overflow: hidden; }
   .progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width 0.2s ease; }
   .progress-text { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .live-counts { font-size: 13px; margin-top: 4px; }
+  .live-counts .p { color: var(--pass); font-weight: 600; }
+  .live-counts .f { color: var(--fail); font-weight: 600; }
+  .live-counts .e { color: var(--error); font-weight: 600; }
   #results { display: none; }
   .score-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 16px; }
   .score-big { font-size: 44px; font-weight: 700; letter-spacing: -1px; }
   .score-sub { color: var(--muted); font-size: 14px; }
+  .sev-counts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .cat { margin-top: 12px; }
   .cat-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
   .cat-head .name { font-weight: 600; }
   .cat-track { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #e5eaf1; }
   .cat-pass { background: var(--pass); } .cat-fail { background: var(--fail); } .cat-error { background: var(--error); }
-  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
-  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
-  td.excerpt { color: #374151; word-break: break-word; max-width: 340px; white-space: pre-wrap; }
+  .pack-group { margin-top: 18px; }
+  .pack-group h3 { font-size: 15px; margin: 0 0 6px; }
+  details.finding { border: 1px solid var(--line); border-radius: 8px;
+                    padding: 10px 14px; margin: 8px 0; background: #fff; }
+  details.finding summary { cursor: pointer; font-size: 14px; }
+  details.finding .body { font-size: 13px; margin-top: 8px; }
+  details.finding .body p { margin: 6px 0; }
+  details.finding .excerpt { color: #374151; word-break: break-word; white-space: pre-wrap; }
   .sev { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px;
          font-weight: 700; color: #fff; white-space: nowrap; }
   .sev-critical { background: #7f1d1d; } .sev-high { background: #c2410c; }
@@ -67,30 +89,21 @@
 <div class="wrap">
   <header>
     <h1>LLM<span class="accent">Posture</span></h1>
-    <p class="tagline">A behavioural security scanner for large language models. It runs
-      <span id="probe-count">76</span> probes against an LLM endpoint and reports where the guardrails give way:
-      prompt injection, system prompt leakage, jailbreaks, encoding bypasses, indirect
-      injection, sensitive data disclosure, excessive agency, and unsafe output handling.
-      Every probe is scored against benign canaries generated for the run, never against
-      real harmful content. Source and full methodology:
+    <p class="tagline">A security scanner for large language models. Give it your LLM
+      endpoint URL and it runs <span id="probe-count">76</span> probes against it and
+      reports where the guardrails give way: prompt injection, system prompt leakage,
+      jailbreaks, encoding bypasses, indirect injection, sensitive data disclosure,
+      excessive agency, unsafe output handling, and RAG or memory poisoning. Every probe
+      is scored against benign canaries generated for the run, never against real
+      harmful content. Source and full methodology:
       <a href="https://github.com/RahilSahu/llmposture">github.com/RahilSahu/llmposture</a>.</p>
   </header>
 
   <div class="card">
-    <h2>Try it now: built-in demo targets</h2>
-    <p class="hint">Two simulated LLM apps run inside this page's scan function. No API key,
-      no external calls. The weak one is deliberately badly guarded; the strict one refuses
-      the probes.</p>
-    <div class="row">
-      <button id="btn-weak" type="button">Scan mock-weak</button>
-      <button id="btn-strict" type="button" class="secondary">Scan mock-strict</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Scan your own endpoint</h2>
-    <p class="hint">Any OpenAI-compatible chat completions endpoint works. Pick a provider
-      preset or paste a custom base URL, for example a local Ollama or vLLM server.</p>
+    <h2>Scan your LLM</h2>
+    <p class="hint">Paste the base URL of your endpoint, pick the model, and run the
+      full probe suite against it. OpenAI-compatible chat completions endpoints work
+      out of the box; native adapters cover Anthropic, Google Gemini, and Ollama.</p>
     <div class="row">
       <div class="field">
         <label for="preset">Provider preset</label>
@@ -99,36 +112,70 @@
           <option value="xai">xAI Grok</option>
           <option value="openrouter">OpenRouter</option>
           <option value="groq">Groq</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="ollama">Ollama (local)</option>
           <option value="custom">Custom</option>
         </select>
       </div>
       <div class="field" style="flex: 2 1 280px;">
-        <label for="base-url">Base URL</label>
+        <label for="base-url">Endpoint URL</label>
         <input id="base-url" type="text" value="https://api.openai.com/v1" spellcheck="false">
       </div>
+    </div>
+    <div class="row" style="margin-top: 12px;">
       <div class="field">
         <label for="model">Model</label>
         <input id="model" type="text" value="gpt-4o-mini" spellcheck="false">
       </div>
       <div class="field">
-        <label for="api-key">API key</label>
-        <input id="api-key" type="password" placeholder="Your key for the chosen provider" autocomplete="off">
+        <label for="adapter">Adapter</label>
+        <select id="adapter">
+          <option value="auto">Auto-detect</option>
+          <option value="openai">OpenAI-compatible</option>
+          <option value="anthropic">Anthropic</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="ollama">Ollama (native)</option>
+        </select>
+      </div>
+      <div class="field" style="flex: 2 1 260px;">
+        <label for="api-key">API key (optional for keyless endpoints)</label>
+        <div class="key-row">
+          <input id="api-key" type="password" placeholder="Your key for the chosen provider" autocomplete="off">
+          <label class="key-toggle"><input type="checkbox" id="key-show"> Show</label>
+        </div>
       </div>
     </div>
-    <div class="note">How your key is handled: it stays in this browser tab. When you run a
-      scan, the browser sends one probe at a time to the scan function together with the
-      key; the function uses it only to call the provider you chose and never stores or
-      logs it. Nothing is kept after the scan finishes. If you would rather not paste a
-      key into a web page, the same scanner runs locally as a command line tool.</div>
-    <div class="actions">
-      <button id="btn-byok" type="button">Run full scan</button>
+    <div class="note">How your key is handled: it stays in this browser tab and is sent
+      only with the scan requests you start. The scan function uses it only to call the
+      endpoint you chose; it is never stored, never logged, and never included in
+      results or downloaded reports. If you would rather not paste a key into a web
+      page, the same scanner runs locally as a command line tool.</div>
+    <div style="margin-top: 16px;">
+      <label>Probe packs</label>
+      <div class="packs" id="packs"></div>
     </div>
-    <div class="err" id="byok-error"></div>
+    <div class="authz">
+      <input type="checkbox" id="authz">
+      <label for="authz">I own this endpoint or am authorised to test it.</label>
+    </div>
+    <div class="actions">
+      <button id="btn-scan" type="button">Scan</button>
+      <button id="btn-cancel" type="button" class="secondary" disabled>Cancel</button>
+    </div>
+    <div class="note">Limits of the hosted scanner: it can only reach public endpoints.
+      URLs that resolve to localhost, private, or cloud-metadata addresses are refused.
+      To scan a local model (for example your own Ollama), run LLMPosture locally
+      instead. Scans run in batches inside short-lived serverless functions, so a probe
+      that runs too long comes back as an error rather than a verdict, and a best-effort
+      per-IP rate limit applies to batch scans.</div>
+    <div class="err" id="scan-error"></div>
   </div>
 
   <div class="progress-wrap" id="progress-wrap">
     <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
     <div class="progress-text" id="progress-text">Starting...</div>
+    <div class="live-counts" id="live-counts"></div>
   </div>
 
   <div class="card" id="results">
@@ -136,11 +183,25 @@
       <div class="score-big"><span id="score-value">0.0</span><span style="font-size:20px; color:var(--muted);"> / 100</span></div>
       <div class="score-sub" id="score-sub"></div>
     </div>
+    <div class="sev-counts" id="sev-counts"></div>
     <div id="categories"></div>
     <h2 style="margin-top: 24px;">Findings</h2>
     <div id="findings-wrap"></div>
     <div class="actions">
-      <button id="btn-download" type="button" class="secondary">Download JSON report</button>
+      <button id="btn-download-json" type="button" class="secondary">Download JSON report</button>
+      <button id="btn-download-html" type="button" class="secondary">Download HTML report</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Demo targets</h2>
+    <p class="hint">No endpoint of your own? These two simulated LLM apps run inside
+      this page's scan function: no API key, no external calls. The weak one is
+      deliberately badly guarded; the strict one refuses the probes. Demo only, they
+      show the shape of a report, not the posture of a real model.</p>
+    <div class="row">
+      <button id="btn-weak" type="button" class="secondary">Scan mock-weak (demo)</button>
+      <button id="btn-strict" type="button" class="secondary">Scan mock-strict (demo)</button>
     </div>
   </div>
 
@@ -161,35 +222,137 @@
 "use strict";
 const WEIGHTS = { critical: 5, high: 3, medium: 2, low: 1 };
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
+const BATCH_SIZE = 8;
 const PRESETS = {
-  openai:     { base: "https://api.openai.com/v1",        model: "gpt-4o-mini" },
-  xai:        { base: "https://api.x.ai/v1",              model: "grok-4" },
-  openrouter: { base: "https://openrouter.ai/api/v1",     model: "openai/gpt-4o-mini" },
-  groq:       { base: "https://api.groq.com/openai/v1",   model: "llama-3.3-70b-versatile" },
-  custom:     { base: "",                                 model: "" }
+  openai:     { base: "https://api.openai.com/v1",                      model: "gpt-4o-mini" },
+  xai:        { base: "https://api.x.ai/v1",                            model: "grok-4" },
+  openrouter: { base: "https://openrouter.ai/api/v1",                   model: "openai/gpt-4o-mini" },
+  groq:       { base: "https://api.groq.com/openai/v1",                 model: "llama-3.3-70b-versatile" },
+  anthropic:  { base: "https://api.anthropic.com/v1",                   model: "claude-sonnet-4-5" },
+  gemini:     { base: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-flash" },
+  ollama:     { base: "http://localhost:11434",                         model: "llama3.2:1b" },
+  custom:     { base: "",                                               model: "" }
+};
+const PACK_LABELS = {
+  direct_injection: "Direct injection",
+  system_prompt_leakage: "System prompt leakage",
+  jailbreak: "Jailbreak",
+  encoding: "Encoding",
+  indirect_injection: "Indirect injection",
+  sensitive_disclosure: "Sensitive disclosure",
+  excessive_agency: "Excessive agency",
+  output_handling: "Output handling",
+  rag_memory: "RAG and memory"
 };
 let catalogue = [];
+let catalogueById = {};
 let lastReport = null;
+let scanAbort = null;
+let scanCancelled = false;
 
 const $ = (id) => document.getElementById(id);
+
+function esc(text) {
+  return String(text == null ? "" : text)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function detectAdapter(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch (e) { return "openai"; }
+  const host = u.hostname.toLowerCase();
+  if (host.includes("anthropic.com")) return "anthropic";
+  if (host.includes("generativelanguage.googleapis.com")) return "gemini";
+  if (u.port === "11434" || host.includes("ollama")) {
+    return u.pathname.includes("/v1") ? "openai" : "ollama";
+  }
+  return "openai";
+}
+
+function chosenAdapter() {
+  const sel = $("adapter").value;
+  return sel === "auto" ? detectAdapter($("base-url").value.trim()) : sel;
+}
+
+function refreshAutoLabel() {
+  const opt = $("adapter").querySelector('option[value="auto"]');
+  opt.textContent = "Auto-detect (" + detectAdapter($("base-url").value.trim()) + ")";
+}
 
 $("preset").addEventListener("change", () => {
   const p = PRESETS[$("preset").value];
   $("base-url").value = p.base;
   $("model").value = p.model;
+  refreshAutoLabel();
+});
+$("base-url").addEventListener("input", refreshAutoLabel);
+$("key-show").addEventListener("change", () => {
+  $("api-key").type = $("key-show").checked ? "text" : "password";
 });
 
 function setBusy(busy) {
-  ["btn-weak", "btn-strict", "btn-byok"].forEach((id) => { $(id).disabled = busy; });
+  ["btn-weak", "btn-strict", "btn-scan"].forEach((id) => { $(id).disabled = busy; });
+  $("btn-cancel").disabled = !busy;
 }
 
-function showProgress(done, total, label) {
+function showProgress(done, total, label, counts) {
   $("progress-wrap").style.display = "block";
   $("progress-bar").style.width = (total ? (100 * done / total) : 0) + "%";
   $("progress-text").textContent = label;
+  if (counts) {
+    $("live-counts").innerHTML =
+      '<span class="p">' + counts.pass + " passed</span> &nbsp;" +
+      '<span class="f">' + counts.fail + " failed</span> &nbsp;" +
+      '<span class="e">' + counts.error + " errors</span>";
+  }
 }
 
 function hideProgress() { $("progress-wrap").style.display = "none"; }
+
+function buildPackCheckboxes() {
+  const wrap = $("packs");
+  wrap.innerHTML = "";
+  const packs = {};
+  for (const p of catalogue) {
+    (packs[p.pack] = packs[p.pack] || []).push(p);
+  }
+  for (const name of Object.keys(packs).sort()) {
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = true;
+    box.dataset.pack = name;
+    label.appendChild(box);
+    label.appendChild(document.createTextNode(
+      " " + (PACK_LABELS[name] || name) + " "));
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = "(" + packs[name].length + ")";
+    label.appendChild(count);
+    wrap.appendChild(label);
+  }
+}
+
+function selectedProbeIds() {
+  const packs = new Set();
+  $("packs").querySelectorAll("input[type=checkbox]").forEach((box) => {
+    if (box.checked) packs.add(box.dataset.pack);
+  });
+  return catalogue.filter((p) => packs.has(p.pack)).map((p) => p.id);
+}
+
+function enrich(result) {
+  const meta = catalogueById[result.probe_id] || {};
+  return Object.assign({}, result, {
+    description: result.description || meta.description || "",
+    remediation: result.remediation || meta.remediation || "",
+    name: result.name || meta.title || "",
+    category: result.category || meta.pack || "",
+    owasp: result.owasp || meta.owasp || "",
+    severity: result.severity || meta.severity || ""
+  });
+}
 
 function assembleReport(results, targetLabel, modelLabel) {
   const perCategory = {};
@@ -227,6 +390,18 @@ function renderReport(report) {
   $("score-sub").textContent =
     report.meta.target + " | " + s.counts.fail + " failed, " + s.counts.pass +
     " passed, " + s.counts.error + " errors, " + s.total_probes + " probes";
+  const sevCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const f of report.findings) {
+    if (f.severity in sevCounts) sevCounts[f.severity] += 1;
+  }
+  const sevWrap = $("sev-counts");
+  sevWrap.innerHTML = "";
+  for (const sev of ["critical", "high", "medium", "low"]) {
+    const badge = document.createElement("span");
+    badge.className = "sev sev-" + sev;
+    badge.textContent = sev + ": " + sevCounts[sev] + " failed";
+    sevWrap.appendChild(badge);
+  }
   const cats = $("categories");
   cats.innerHTML = "";
   for (const name of Object.keys(s.per_category).sort()) {
@@ -240,52 +415,123 @@ function renderReport(report) {
       '<div class="cat-fail" style="width:' + (100 * c.fail / c.total) + '%"></div>' +
       '<div class="cat-error" style="width:' + (100 * c.error / c.total) + '%"></div>' +
       "</div>";
-    div.querySelector(".name").textContent = name;
+    div.querySelector(".name").textContent = PACK_LABELS[name] || name;
     div.querySelector(".cat-head span:last-child").textContent =
       c.pass + " pass, " + c.fail + " fail, " + c.error + " error";
     cats.appendChild(div);
   }
   const wrap = $("findings-wrap");
+  wrap.innerHTML = "";
   if (!report.findings.length) {
     wrap.innerHTML = "<p>No findings. Every probe in this run was resisted.</p>";
   } else {
-    const table = document.createElement("table");
-    table.innerHTML = "<thead><tr><th>Probe</th><th>Severity</th><th>Category</th>" +
-      "<th>Why it failed</th><th>Response excerpt</th></tr></thead>";
-    const tbody = document.createElement("tbody");
+    const byPack = {};
     for (const f of report.findings) {
-      const tr = document.createElement("tr");
-      const cells = [
-        f.probe_id + ": " + (f.name || ""),
-        "", f.category, f.reason || "", f.response_excerpt || ""
-      ];
-      cells.forEach((text, i) => {
-        const td = document.createElement("td");
-        if (i === 1) {
-          const badge = document.createElement("span");
-          badge.className = "sev sev-" + f.severity;
-          badge.textContent = f.severity;
-          td.appendChild(badge);
-        } else {
-          td.textContent = text;
-          if (i === 4) td.className = "excerpt";
-        }
-        tr.appendChild(td);
-      });
-      tbody.appendChild(tr);
+      (byPack[f.category] = byPack[f.category] || []).push(f);
     }
-    table.appendChild(tbody);
-    wrap.innerHTML = "";
-    wrap.appendChild(table);
+    for (const pack of Object.keys(byPack).sort()) {
+      const group = document.createElement("div");
+      group.className = "pack-group";
+      const h = document.createElement("h3");
+      h.textContent = (PACK_LABELS[pack] || pack) + " (" + byPack[pack].length + ")";
+      group.appendChild(h);
+      for (const f of byPack[pack]) {
+        const details = document.createElement("details");
+        details.className = "finding";
+        const summary = document.createElement("summary");
+        const badge = document.createElement("span");
+        badge.className = "sev sev-" + f.severity;
+        badge.textContent = f.severity;
+        summary.appendChild(badge);
+        summary.appendChild(document.createTextNode(
+          " " + f.probe_id + ": " + (f.name || "")));
+        details.appendChild(summary);
+        const body = document.createElement("div");
+        body.className = "body";
+        const rows = [
+          ["OWASP", f.owasp],
+          ["What this probe tests", f.description],
+          ["Why it failed", f.reason],
+          ["Payload summary", f.payload_summary],
+          ["Response excerpt", f.response_excerpt],
+          ["Remediation", f.remediation]
+        ];
+        for (const pair of rows) {
+          if (!pair[1]) continue;
+          const p = document.createElement("p");
+          const strong = document.createElement("strong");
+          strong.textContent = pair[0] + ": ";
+          p.appendChild(strong);
+          const span = document.createElement("span");
+          if (pair[0] === "Response excerpt") span.className = "excerpt";
+          span.textContent = pair[1];
+          p.appendChild(span);
+          body.appendChild(p);
+        }
+        details.appendChild(body);
+        group.appendChild(details);
+      }
+      wrap.appendChild(group);
+    }
   }
   $("results").style.display = "block";
   $("results").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function reportToHtml(report) {
+  const meta = report.meta, s = report.summary, counts = s.counts;
+  const catRows = Object.keys(s.per_category).sort().map((name) => {
+    const c = s.per_category[name];
+    return "<tr><td>" + esc(name) + "</td><td>" + c.pass + "</td><td>" +
+      c.fail + "</td><td>" + c.error + "</td><td>" + c.total + "</td></tr>";
+  }).join("");
+  const findingBlocks = report.findings.length ? report.findings.map((f) =>
+    "<section class='finding'><h3>" + esc(f.probe_id) + ": " + esc(f.name) +
+    " (" + esc(f.severity) + ")</h3><p><strong>Category:</strong> " +
+    esc(f.category) + " (" + esc(f.owasp) + ")<br><strong>Why it failed:</strong> " +
+    esc(f.reason) + "<br><strong>Payload summary:</strong> " +
+    esc(f.payload_summary) + "<br><strong>Response excerpt:</strong> " +
+    esc(f.response_excerpt) + "<br><strong>Remediation:</strong> " +
+    esc(f.remediation) + "</p></section>").join("")
+    : "<p>No findings. Every probe was resisted.</p>";
+  return "<!DOCTYPE html>\n<html lang='en'><head><meta charset='utf-8'>" +
+    "<title>LLMPosture scan report</title><style>body{font-family:-apple-system," +
+    "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:900px;margin:24px auto;" +
+    "padding:0 16px;color:#1a2332;line-height:1.5}table{border-collapse:collapse}" +
+    "td,th{border:1px solid #d9e0ea;padding:6px 10px;text-align:left}" +
+    ".finding{border:1px solid #d9e0ea;border-radius:8px;padding:10px 14px;" +
+    "margin:10px 0}h3{margin:4px 0}</style></head><body>" +
+    "<h1>LLMPosture scan report</h1><p>Target: " + esc(meta.target) +
+    "<br>Model: " + esc(meta.model) + "<br>Date (UTC): " + esc(meta.date) +
+    "<br>Posture score: <strong>" + s.posture_score + " / 100</strong> (" +
+    counts.fail + " failed, " + counts.pass + " passed, " + counts.error +
+    " errors, " + s.total_probes + " probes)</p>" +
+    "<h2>Results by category</h2><table><tr><th>Category</th><th>Pass</th>" +
+    "<th>Fail</th><th>Error</th><th>Total</th></tr>" + catRows + "</table>" +
+    "<h2>Findings</h2>" + findingBlocks +
+    "<h2>Method and limits</h2><p>Probes use benign canaries generated per run: " +
+    "a protected marker token, a planted fake API key, and a planted fake customer " +
+    "record. A probe fails only when the target produces a canary, leaks planted " +
+    "content, calls a fake tool, or emits unsafe markup carrying the marker. " +
+    "Evaluators are heuristics and can miss paraphrased leaks. A clean score " +
+    "means these probes were resisted, not that the target is secure. Run " +
+    "LLMPosture only against systems you own or are authorised to test.</p>" +
+    "</body></html>";
+}
+
+function download(name, text, type) {
+  const blob = new Blob([text], { type: type });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 async function runMock(target) {
   setBusy(true);
-  $("byok-error").style.display = "none";
-  showProgress(0, 1, "Scanning mock-" + target + "...");
+  $("scan-error").style.display = "none";
+  showProgress(0, 1, "Scanning mock-" + target + " (demo)...");
   try {
     const resp = await fetch("/api/scan/mock", {
       method: "POST",
@@ -294,93 +540,141 @@ async function runMock(target) {
     });
     if (!resp.ok) throw new Error("scan request failed with HTTP " + resp.status);
     const report = await resp.json();
+    report.results = report.results.map(enrich);
+    report.findings = report.findings.map((f) =>
+      enrich(Object.assign({ status: "fail" }, f)));
     showProgress(1, 1, "Done.");
     renderReport(report);
   } catch (err) {
-    $("byok-error").textContent = "The demo scan failed: " + err.message;
-    $("byok-error").style.display = "block";
+    $("scan-error").textContent = "The demo scan failed: " + err.message;
+    $("scan-error").style.display = "block";
   } finally {
     hideProgress();
     setBusy(false);
   }
 }
 
-async function runByok() {
+async function runScan() {
   const baseUrl = $("base-url").value.trim();
   const model = $("model").value.trim();
   const apiKey = $("api-key").value;
-  const errBox = $("byok-error");
+  const adapter = chosenAdapter();
+  const errBox = $("scan-error");
   errBox.style.display = "none";
   if (!baseUrl || !model) {
-    errBox.textContent = "Base URL and model are both required.";
+    errBox.textContent = "Endpoint URL and model are both required.";
+    errBox.style.display = "block";
+    return;
+  }
+  if (!$("authz").checked) {
+    errBox.textContent = "Confirm that you own this endpoint or are authorised " +
+      "to test it before scanning.";
     errBox.style.display = "block";
     return;
   }
   if (!catalogue.length) {
-    try {
-      const r = await fetch("/api/probes");
-      catalogue = (await r.json()).probes;
-    } catch (err) {
-      errBox.textContent = "Could not load the probe catalogue: " + err.message;
-      errBox.style.display = "block";
-      return;
-    }
+    errBox.textContent = "The probe catalogue has not loaded yet; wait a moment " +
+      "and try again.";
+    errBox.style.display = "block";
+    return;
+  }
+  const probeIds = selectedProbeIds();
+  if (!probeIds.length) {
+    errBox.textContent = "Select at least one probe pack.";
+    errBox.style.display = "block";
+    return;
   }
   setBusy(true);
+  scanCancelled = false;
+  scanAbort = new AbortController();
   const results = [];
-  showProgress(0, catalogue.length, "Starting scan of " + model + "...");
-  for (let i = 0; i < catalogue.length; i++) {
-    const probe = catalogue[i];
-    showProgress(i, catalogue.length,
-      "Probe " + (i + 1) + " of " + catalogue.length + ": " + probe.id +
-      " (" + probe.title + ")");
+  const counts = { pass: 0, fail: 0, error: 0 };
+  showProgress(0, probeIds.length,
+    "Starting scan of " + model + " at " + baseUrl + "...", counts);
+  for (let start = 0; start < probeIds.length; start += BATCH_SIZE) {
+    if (scanCancelled) break;
+    const batch = probeIds.slice(start, start + BATCH_SIZE);
+    showProgress(results.length, probeIds.length,
+      "Running probes " + (start + 1) + " to " +
+      Math.min(start + BATCH_SIZE, probeIds.length) + " of " +
+      probeIds.length + "...", counts);
     try {
-      const resp = await fetch("/api/scan/probe", {
+      const resp = await fetch("/api/scan/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ probe_id: probe.id, base_url: baseUrl,
-                               model: model, api_key: apiKey })
+        signal: scanAbort.signal,
+        body: JSON.stringify({
+          target: { base_url: baseUrl, model: model,
+                    api_key: apiKey ? apiKey : null, adapter: adapter },
+          probe_ids: batch
+        })
       });
       if (!resp.ok) {
         let detail = "HTTP " + resp.status;
         try { detail += ": " + (await resp.json()).detail; } catch (e) { /* keep default */ }
         throw new Error(detail);
       }
-      results.push(await resp.json());
+      const data = await resp.json();
+      for (const r of data.results) {
+        const item = enrich(r);
+        results.push(item);
+        counts[item.status] += 1;
+      }
     } catch (err) {
-      results.push({ probe_id: probe.id, name: probe.title, category: probe.pack,
-                     owasp: probe.owasp, severity: probe.severity, status: "error",
-                     reason: "probe request failed: " + err.message,
-                     payload_summary: "", response_excerpt: "", turns_sent: 0 });
+      if (err.name === "AbortError") { scanCancelled = true; break; }
+      for (const id of batch) {
+        const meta = catalogueById[id] || {};
+        results.push(enrich({ probe_id: id, name: meta.title,
+          category: meta.pack, owasp: meta.owasp, severity: meta.severity,
+          status: "error", reason: "batch request failed: " + err.message,
+          payload_summary: "", response_excerpt: "", turns_sent: 0 }));
+        counts.error += 1;
+      }
     }
+    showProgress(results.length, probeIds.length,
+      "Scanned " + results.length + " of " + probeIds.length + " probes.",
+      counts);
   }
-  showProgress(catalogue.length, catalogue.length, "Done.");
-  renderReport(assembleReport(results, baseUrl + " model=" + model, model));
   hideProgress();
   setBusy(false);
+  if (results.length) {
+    const label = baseUrl + " model=" + model + " adapter=" + adapter +
+      (scanCancelled ? " (scan cancelled early)" : "");
+    renderReport(assembleReport(results, label, model));
+  } else if (scanCancelled) {
+    errBox.textContent = "Scan cancelled before any probe completed.";
+    errBox.style.display = "block";
+  }
 }
 
 $("btn-weak").addEventListener("click", () => runMock("weak"));
 $("btn-strict").addEventListener("click", () => runMock("strict"));
-$("btn-byok").addEventListener("click", runByok);
-$("btn-download").addEventListener("click", () => {
+$("btn-scan").addEventListener("click", runScan);
+$("btn-cancel").addEventListener("click", () => {
+  scanCancelled = true;
+  if (scanAbort) scanAbort.abort();
+});
+$("btn-download-json").addEventListener("click", () => {
   if (!lastReport) return;
-  const blob = new Blob([JSON.stringify(lastReport, null, 2)],
-                        { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "llmposture-report.json";
-  a.click();
-  URL.revokeObjectURL(a.href);
+  download("llmposture-report.json", JSON.stringify(lastReport, null, 2),
+           "application/json");
+});
+$("btn-download-html").addEventListener("click", () => {
+  if (!lastReport) return;
+  download("llmposture-report.html", reportToHtml(lastReport), "text/html");
 });
 
 fetch("/api/probes").then((r) => r.json())
   .then((data) => {
     catalogue = data.probes;
+    catalogueById = {};
+    for (const p of catalogue) catalogueById[p.id] = p;
     $("probe-count").textContent = catalogue.length;
-    $("btn-byok").textContent = "Run full scan (" + catalogue.length + " probes)";
+    buildPackCheckboxes();
+    refreshAutoLabel();
   })
-  .catch(() => { /* the Run handler retries the fetch */ });
+  .catch(() => { /* the Scan handler reports a clear error if still empty */ });
+refreshAutoLabel();
 </script>
 </body>
 </html>

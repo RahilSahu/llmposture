@@ -36,6 +36,56 @@ EVALUATORS = (
     "unsafe_output",
 )
 
+# Default remediation guidance per pack. A probe may override it with its
+# own ``remediation`` field; otherwise the pack guidance applies. Reports
+# and the web UI show this text next to each finding.
+REMEDIATION_BY_CATEGORY = {
+    "direct_injection": (
+        "Treat user input as data, never as instructions. Keep the system "
+        "prompt authoritative: delimit untrusted content, tell the model to "
+        "ignore instruction-like text from users, and enforce policy "
+        "outside the model with input and output filters."),
+    "system_prompt_leakage": (
+        "Never place secrets or sensitive logic in the system prompt; "
+        "assume it can be extracted. Keep credentials and enforcement "
+        "server-side, and filter outputs for verbatim prompt fragments "
+        "before returning them."),
+    "jailbreak": (
+        "A policy system prompt alone is not enough. Layer defences: input "
+        "classification for jailbreak patterns, output filtering, and "
+        "refusal behaviour tested against persona, fiction and multi-turn "
+        "framings, not just direct requests."),
+    "encoding": (
+        "Normalise before judging: decode base64, hex, ROT13, leetspeak, "
+        "homoglyph and zero-width tricks in user input, then apply the "
+        "same policy checks to the decoded content as to plain text."),
+    "indirect_injection": (
+        "Content from documents, web pages, tool output and other users "
+        "is untrusted data. Delimit it, tell the model it cannot issue "
+        "instructions, and never let retrieved content trigger tools or "
+        "actions directly."),
+    "sensitive_disclosure": (
+        "Do not put real secrets or personal data in the model's context. "
+        "Redact before retrieval, keep per-user data isolated, and filter "
+        "outputs for credential and record patterns before they reach "
+        "the user."),
+    "excessive_agency": (
+        "Give the model the least agency it needs. Require explicit human "
+        "confirmation for destructive, financial or irreversible tool "
+        "calls, scope tool permissions per task, and validate tool "
+        "arguments server-side."),
+    "output_handling": (
+        "Treat model output as untrusted content. Escape or sanitise it "
+        "before rendering (no raw HTML, script tags or event handlers), "
+        "validate URLs and markdown, and serve pages with a strict "
+        "Content-Security-Policy."),
+    "rag_memory": (
+        "Verify what enters the knowledge base and memory: source trust "
+        "checks, per-user memory isolation, and retrieval filtering. Do "
+        "not let stored content silently change instructions, and let "
+        "users inspect and delete stored memories."),
+}
+
 
 @dataclass
 class Probe:
@@ -47,6 +97,7 @@ class Probe:
     description: str
     evaluator: str
     turns: list[str]
+    remediation: str = ""
     context_messages: list[dict] = field(default_factory=list)
     evaluator_params: dict = field(default_factory=dict)
     transform: str | None = None
@@ -80,6 +131,9 @@ def _load_pack(path: str) -> list[Probe]:
             description=item.get("description", ""),
             evaluator=item["evaluator"],
             turns=list(item["turns"]),
+            remediation=item.get(
+                "remediation",
+                REMEDIATION_BY_CATEGORY.get(item["category"], "")),
             context_messages=list(item.get("context_messages", [])),
             evaluator_params=dict(item.get("evaluator_params", {})),
             transform=item.get("transform"),

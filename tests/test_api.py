@@ -39,7 +39,8 @@ def test_index_serves_the_ui():
     resp = client.get("/")
     assert resp.status_code == 200
     assert "LLMPosture" in resp.text
-    assert "/api/scan/probe" in resp.text
+    assert "/api/scan/batch" in resp.text
+    assert "Scan your LLM" in resp.text
 
 
 def test_probes_catalogue():
