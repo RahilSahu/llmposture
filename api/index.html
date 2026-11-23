@@ -34,9 +34,16 @@
   button:hover { background: var(--accent-dark); }
   button.secondary { background: #eef2f7; color: var(--ink); border: 1px solid var(--line); }
   button.secondary:hover { background: #e2e8f0; }
+  button.small { padding: 5px 10px; font-size: 12px; }
   button:disabled { opacity: 0.55; cursor: default; }
   .note { background: #f0f6ff; border: 1px solid #c7dbfc; border-radius: 6px;
           padding: 10px 12px; font-size: 13px; color: #274268; margin-top: 14px; }
+  .warn { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 6px;
+          padding: 12px 14px; font-size: 13.5px; color: #7c2d12; margin-top: 14px;
+          display: none; }
+  .warn code { display: block; background: #fff; border: 1px solid #fed7aa;
+               border-radius: 6px; padding: 8px 10px; margin: 8px 0; font-size: 12.5px;
+               white-space: pre-wrap; word-break: break-all; color: #7c2d12; }
   .packs { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 6px; }
   .packs label { display: flex; align-items: center; gap: 6px; font-weight: 500;
                  font-size: 13px; margin: 0; }
@@ -60,8 +67,16 @@
   #results { display: none; }
   .score-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 16px; }
   .score-big { font-size: 44px; font-weight: 700; letter-spacing: -1px; }
+  .grade { display: inline-block; padding: 4px 12px; border-radius: 999px;
+           font-size: 14px; font-weight: 700; color: #fff; background: var(--accent); }
   .score-sub { color: var(--muted); font-size: 14px; }
   .sev-counts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .risks { margin-top: 14px; font-size: 14px; }
+  .risks h3, .errors-box h3 { font-size: 15px; margin: 0 0 6px; }
+  .risks ol { margin: 0; padding-left: 20px; }
+  .errors-box { margin-top: 18px; border: 1px solid #fecaca; background: #fef2f2;
+                border-radius: 8px; padding: 12px 14px; font-size: 13.5px; }
+  .errors-box p { margin: 6px 0; }
   .cat { margin-top: 12px; }
   .cat-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
   .cat-head .name { font-weight: 600; }
@@ -75,11 +90,25 @@
   details.finding .body { font-size: 13px; margin-top: 8px; }
   details.finding .body p { margin: 6px 0; }
   details.finding .excerpt { color: #374151; word-break: break-word; white-space: pre-wrap; }
+  details.allprobes { margin-top: 20px; }
+  details.allprobes summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12.5px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  td.excerpt { color: #374151; word-break: break-word; max-width: 320px; white-space: pre-wrap; }
+  .status-pass { color: var(--pass); font-weight: 700; }
+  .status-fail { color: var(--fail); font-weight: 700; }
+  .status-error { color: var(--error); font-weight: 700; }
   .sev { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px;
          font-weight: 700; color: #fff; white-space: nowrap; }
   .sev-critical { background: #7f1d1d; } .sev-high { background: #c2410c; }
   .sev-medium { background: #a16207; } .sev-low { background: #4d7c0f; }
   .actions { margin-top: 16px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .history-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+                 padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+  .history-row .when { color: var(--muted); min-width: 150px; }
+  .history-row .what { flex: 1 1 220px; }
+  .history-row .score { font-weight: 700; }
   footer { color: var(--muted); font-size: 13px; margin-top: 28px; }
   footer a, .tagline a { color: var(--accent); }
   .err { color: var(--fail); font-size: 14px; margin-top: 10px; display: none; }
@@ -109,11 +138,11 @@
         <label for="preset">Provider preset</label>
         <select id="preset">
           <option value="openai">OpenAI</option>
-          <option value="xai">xAI Grok</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="groq">Groq</option>
           <option value="anthropic">Anthropic</option>
           <option value="gemini">Google Gemini</option>
+          <option value="groq">Groq</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="xai">xAI Grok</option>
           <option value="ollama">Ollama (local)</option>
           <option value="custom">Custom</option>
         </select>
@@ -123,10 +152,11 @@
         <input id="base-url" type="text" value="https://api.openai.com/v1" spellcheck="false">
       </div>
     </div>
+    <div class="warn" id="local-guidance"></div>
     <div class="row" style="margin-top: 12px;">
       <div class="field">
         <label for="model">Model</label>
-        <input id="model" type="text" value="gpt-4o-mini" spellcheck="false">
+        <input id="model" type="text" value="gpt-4o-mini" placeholder="e.g. gpt-4o-mini, gpt-4o" spellcheck="false">
       </div>
       <div class="field">
         <label for="adapter">Adapter</label>
@@ -149,8 +179,8 @@
     <div class="note">How your key is handled: it stays in this browser tab and is sent
       only with the scan requests you start. The scan function uses it only to call the
       endpoint you chose; it is never stored, never logged, and never included in
-      results or downloaded reports. If you would rather not paste a key into a web
-      page, the same scanner runs locally as a command line tool.</div>
+      results, downloaded reports, or scan history. If you would rather not paste a key
+      into a web page, the same scanner runs locally as a command line tool.</div>
     <div style="margin-top: 16px;">
       <label>Probe packs</label>
       <div class="packs" id="packs"></div>
@@ -164,11 +194,11 @@
       <button id="btn-cancel" type="button" class="secondary" disabled>Cancel</button>
     </div>
     <div class="note">Limits of the hosted scanner: it can only reach public endpoints.
-      URLs that resolve to localhost, private, or cloud-metadata addresses are refused.
-      To scan a local model (for example your own Ollama), run LLMPosture locally
-      instead. Scans run in batches inside short-lived serverless functions, so a probe
-      that runs too long comes back as an error rather than a verdict, and a best-effort
-      per-IP rate limit applies to batch scans.</div>
+      URLs that resolve to localhost, private, or cloud-metadata addresses are refused,
+      and local addresses get guidance instead of a scan. Scans run in batches inside
+      short-lived serverless functions, so a probe that runs too long comes back as an
+      error rather than a verdict, and a best-effort per-IP rate limit applies to
+      batch scans.</div>
     <div class="err" id="scan-error"></div>
   </div>
 
@@ -181,15 +211,32 @@
   <div class="card" id="results">
     <div class="score-line">
       <div class="score-big"><span id="score-value">0.0</span><span style="font-size:20px; color:var(--muted);"> / 100</span></div>
+      <span class="grade" id="grade-chip"></span>
       <div class="score-sub" id="score-sub"></div>
     </div>
     <div class="sev-counts" id="sev-counts"></div>
+    <div class="risks" id="top-risks"></div>
     <div id="categories"></div>
+    <div class="errors-box" id="errors-box" style="display:none;"></div>
     <h2 style="margin-top: 24px;">Findings</h2>
     <div id="findings-wrap"></div>
+    <details class="allprobes" id="all-probes">
+      <summary>All probe results (passed, failed and errored)</summary>
+      <div id="all-probes-wrap"></div>
+    </details>
     <div class="actions">
       <button id="btn-download-json" type="button" class="secondary">Download JSON report</button>
       <button id="btn-download-html" type="button" class="secondary">Download HTML report</button>
+    </div>
+  </div>
+
+  <div class="card" id="history-card" style="display:none;">
+    <h2>Recent scans in this browser</h2>
+    <p class="hint">The last 10 scans are kept in this browser only, so a past report
+      can be viewed or re-downloaded without rescanning. API keys are never stored.</p>
+    <div id="history-list"></div>
+    <div class="actions">
+      <button id="btn-clear-history" type="button" class="secondary small">Clear history</button>
     </div>
   </div>
 
@@ -223,15 +270,24 @@
 const WEIGHTS = { critical: 5, high: 3, medium: 2, low: 1 };
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 const BATCH_SIZE = 8;
+const HISTORY_KEY = "llmposture.history.v1";
 const PRESETS = {
-  openai:     { base: "https://api.openai.com/v1",                      model: "gpt-4o-mini" },
-  xai:        { base: "https://api.x.ai/v1",                            model: "grok-4" },
-  openrouter: { base: "https://openrouter.ai/api/v1",                   model: "openai/gpt-4o-mini" },
-  groq:       { base: "https://api.groq.com/openai/v1",                 model: "llama-3.3-70b-versatile" },
-  anthropic:  { base: "https://api.anthropic.com/v1",                   model: "claude-sonnet-4-5" },
-  gemini:     { base: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-flash" },
-  ollama:     { base: "http://localhost:11434",                         model: "llama3.2:1b" },
-  custom:     { base: "",                                               model: "" }
+  openai:     { base: "https://api.openai.com/v1", model: "gpt-4o-mini",
+                placeholder: "e.g. gpt-4o-mini, gpt-4o, gpt-4.1-mini", adapter: "openai" },
+  anthropic:  { base: "https://api.anthropic.com/v1", model: "claude-sonnet-4-5",
+                placeholder: "e.g. claude-sonnet-4-5, claude-haiku-4-5", adapter: "anthropic" },
+  gemini:     { base: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-2.5-flash",
+                placeholder: "e.g. gemini-2.5-flash, gemini-2.5-pro", adapter: "gemini" },
+  groq:       { base: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile",
+                placeholder: "e.g. llama-3.3-70b-versatile, openai/gpt-oss-120b", adapter: "openai" },
+  openrouter: { base: "https://openrouter.ai/api/v1", model: "openai/gpt-4o-mini",
+                placeholder: "e.g. openai/gpt-4o-mini, anthropic/claude-sonnet-4-5", adapter: "openai" },
+  xai:        { base: "https://api.x.ai/v1", model: "grok-4",
+                placeholder: "e.g. grok-4, grok-3-mini", adapter: "openai" },
+  ollama:     { base: "http://localhost:11434", model: "llama3.2:1b",
+                placeholder: "e.g. llama3.2:1b, qwen2.5:1.5b, gemma2:2b", adapter: "ollama" },
+  custom:     { base: "", model: "",
+                placeholder: "The model name on your endpoint", adapter: "auto" }
 };
 const PACK_LABELS = {
   direct_injection: "Direct injection",
@@ -244,9 +300,20 @@ const PACK_LABELS = {
   output_handling: "Output handling",
   rag_memory: "RAG and memory"
 };
+const ERROR_EXPLANATIONS = {
+  auth: "The provider rejected the request (401 or 403). Check the API key is correct, that it belongs to this provider, and that it has access to the chosen model.",
+  not_found: "The provider returned 404. Check the model name is exactly right for this endpoint and that the base URL points at the API root (for OpenAI-compatible endpoints it usually ends in /v1).",
+  rate_limited: "The provider rate-limited the scan (429). Wait a few minutes and retry, or run the scan locally with the CLI where you control the pace.",
+  timeout: "Requests to the endpoint timed out. The endpoint may be slow or overloaded, or the model may still be loading. Retry the scan, or scan locally with the CLI.",
+  dns: "The hostname could not be resolved (DNS failure). Check the endpoint URL for typos and that the host exists.",
+  unreachable: "The endpoint could not be reached. Check it is running, the host and port are right, and it accepts connections from the public internet.",
+  service: "The scan service itself rejected or failed this batch; the exact message is in the per-probe results below.",
+  other: "The probe failed for an unclassified reason; the raw message is in the per-probe results below."
+};
 let catalogue = [];
 let catalogueById = {};
 let lastReport = null;
+let scannerVersion = "";
 let scanAbort = null;
 let scanCancelled = false;
 
@@ -256,6 +323,14 @@ function esc(text) {
   return String(text == null ? "" : text)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function gradeBand(score) {
+  if (score >= 90) return { letter: "A", label: "Strong" };
+  if (score >= 75) return { letter: "B", label: "Good" };
+  if (score >= 60) return { letter: "C", label: "Fair" };
+  if (score >= 40) return { letter: "D", label: "Weak" };
+  return { letter: "F", label: "Critical" };
 }
 
 function detectAdapter(rawUrl) {
@@ -280,13 +355,66 @@ function refreshAutoLabel() {
   opt.textContent = "Auto-detect (" + detectAdapter($("base-url").value.trim()) + ")";
 }
 
+/* Local and private addresses get guidance, not a confusing failure: the
+   hosted scanner runs on a public server and refuses these ranges on
+   purpose. Returns "local", "blocked", or null for public URLs. */
+function privateHostKind(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch (e) { return null; }
+  const host = u.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost")) return "local";
+  if (host === "metadata.google.internal" || host === "metadata.google") return "blocked";
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const a = Number(v4[1]), b = Number(v4[2]);
+    if (a === 127 || a === 10 || a === 0) return "local";
+    if (a === 192 && b === 168) return "local";
+    if (a === 172 && b >= 16 && b <= 31) return "local";
+    if (a === 169 && b === 254) return "blocked";
+    if (a >= 224 || a === 100 && b >= 64 && b <= 127) return "blocked";
+  }
+  if (host === "::1" || host.startsWith("fe80") ||
+      host.startsWith("fc") || host.startsWith("fd")) return "local";
+  return null;
+}
+
+function refreshLocalGuidance() {
+  const url = $("base-url").value.trim();
+  const kind = privateHostKind(url);
+  const box = $("local-guidance");
+  if (!kind) { box.style.display = "none"; box.innerHTML = ""; return false; }
+  let host = url;
+  try { host = new URL(url).host; } catch (e) { /* keep raw text */ }
+  box.innerHTML =
+    "<strong>This address cannot be scanned from here.</strong> " + esc(host) +
+    " is a local or private-network address. This page runs on a public server, " +
+    "so the scan cannot reach it, and private addresses are refused on purpose to " +
+    "protect internal networks. Two ways to scan this endpoint:" +
+    "<br><br><strong>1. Run the same scanner locally with the CLI</strong> " +
+    "(install once: <em>pip install git+https://github.com/RahilSahu/llmposture</em>):" +
+    "<code>llmposture scan --target openai-compatible --base-url " +
+    "http://localhost:11434/v1 --model llama3.2:1b</code>" +
+    "Use your own base URL and model in that command; for a key-protected endpoint " +
+    "add <em>--api-key-env YOUR_KEY_ENV_VAR</em>." +
+    "<br><strong>2. Expose the endpoint through a public tunnel</strong> (for example " +
+    "ngrok or cloudflared) and paste the public https tunnel URL above instead.";
+  box.style.display = "block";
+  return true;
+}
+
 $("preset").addEventListener("change", () => {
   const p = PRESETS[$("preset").value];
   $("base-url").value = p.base;
   $("model").value = p.model;
+  $("model").placeholder = p.placeholder;
+  $("adapter").value = p.adapter;
   refreshAutoLabel();
+  refreshLocalGuidance();
 });
-$("base-url").addEventListener("input", refreshAutoLabel);
+$("base-url").addEventListener("input", () => {
+  refreshAutoLabel();
+  refreshLocalGuidance();
+});
 $("key-show").addEventListener("change", () => {
   $("api-key").type = $("key-show").checked ? "text" : "password";
 });
@@ -350,11 +478,20 @@ function enrich(result) {
     name: result.name || meta.title || "",
     category: result.category || meta.pack || "",
     owasp: result.owasp || meta.owasp || "",
-    severity: result.severity || meta.severity || ""
+    severity: result.severity || meta.severity || "",
+    error_kind: result.error_kind || null
   });
 }
 
-function assembleReport(results, targetLabel, modelLabel) {
+function severityCounts(report) {
+  const sev = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const f of report.findings) {
+    if (f.severity in sev) sev[f.severity] += 1;
+  }
+  return sev;
+}
+
+function assembleReport(results, targetLabel, modelLabel, extra) {
   const perCategory = {};
   const counts = { pass: 0, fail: 0, error: 0 };
   let totalWeight = 0, passedWeight = 0;
@@ -374,8 +511,11 @@ function assembleReport(results, targetLabel, modelLabel) {
     a.probe_id.localeCompare(b.probe_id));
   return {
     tool: "llmposture",
-    meta: { target: targetLabel, model: modelLabel,
-            date: new Date().toISOString().replace(/\.\d+Z$/, "Z") },
+    meta: Object.assign({
+      target: targetLabel, model: modelLabel,
+      date: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
+      version: scannerVersion || "unknown"
+    }, extra || {}),
     summary: { posture_score: score, total_probes: results.length,
                counts: counts, per_category: perCategory },
     findings: findings,
@@ -383,17 +523,21 @@ function assembleReport(results, targetLabel, modelLabel) {
   };
 }
 
-function renderReport(report) {
+function renderReport(report, save) {
   lastReport = report;
   const s = report.summary;
+  const grade = gradeBand(s.posture_score);
   $("score-value").textContent = s.posture_score.toFixed(1);
-  $("score-sub").textContent =
-    report.meta.target + " | " + s.counts.fail + " failed, " + s.counts.pass +
-    " passed, " + s.counts.error + " errors, " + s.total_probes + " probes";
-  const sevCounts = { critical: 0, high: 0, medium: 0, low: 0 };
-  for (const f of report.findings) {
-    if (f.severity in sevCounts) sevCounts[f.severity] += 1;
+  $("grade-chip").textContent = "Grade " + grade.letter + ": " + grade.label;
+  const metaBits = [report.meta.target,
+    s.counts.fail + " failed, " + s.counts.pass + " passed, " +
+    s.counts.error + " errors, " + s.total_probes + " probes"];
+  if (report.meta.duration_seconds != null) {
+    metaBits.push("scan took " + report.meta.duration_seconds + "s");
   }
+  if (report.meta.version) metaBits.push("scanner v" + report.meta.version);
+  $("score-sub").textContent = metaBits.join(" | ");
+  const sevCounts = severityCounts(report);
   const sevWrap = $("sev-counts");
   sevWrap.innerHTML = "";
   for (const sev of ["critical", "high", "medium", "low"]) {
@@ -401,6 +545,21 @@ function renderReport(report) {
     badge.className = "sev sev-" + sev;
     badge.textContent = sev + ": " + sevCounts[sev] + " failed";
     sevWrap.appendChild(badge);
+  }
+  const risks = $("top-risks");
+  risks.innerHTML = "";
+  if (report.findings.length) {
+    const h = document.createElement("h3");
+    h.textContent = "Top risks";
+    risks.appendChild(h);
+    const ol = document.createElement("ol");
+    for (const f of report.findings.slice(0, 3)) {
+      const li = document.createElement("li");
+      li.textContent = f.probe_id + ": " + (f.name || "") + " (" +
+        (PACK_LABELS[f.category] || f.category) + ", " + f.severity + ")";
+      ol.appendChild(li);
+    }
+    risks.appendChild(ol);
   }
   const cats = $("categories");
   cats.innerHTML = "";
@@ -419,6 +578,31 @@ function renderReport(report) {
     div.querySelector(".cat-head span:last-child").textContent =
       c.pass + " pass, " + c.fail + " fail, " + c.error + " error";
     cats.appendChild(div);
+  }
+  const errBox = $("errors-box");
+  const errored = report.results.filter((r) => r.status === "error");
+  if (errored.length) {
+    errBox.innerHTML = "";
+    const h = document.createElement("h3");
+    h.textContent = errored.length + " probe" +
+      (errored.length === 1 ? "" : "s") +
+      " could not be completed (counted as errors, not passes or failures)";
+    errBox.appendChild(h);
+    const byKind = {};
+    for (const r of errored) {
+      (byKind[r.error_kind || "other"] = byKind[r.error_kind || "other"] || [])
+        .push(r.probe_id);
+    }
+    for (const kind of Object.keys(byKind)) {
+      const p = document.createElement("p");
+      p.textContent = (ERROR_EXPLANATIONS[kind] || ERROR_EXPLANATIONS.other) +
+        " Affected probes: " + byKind[kind].join(", ") + ".";
+      errBox.appendChild(p);
+    }
+    errBox.style.display = "block";
+  } else {
+    errBox.style.display = "none";
+    errBox.innerHTML = "";
   }
   const wrap = $("findings-wrap");
   wrap.innerHTML = "";
@@ -454,7 +638,7 @@ function renderReport(report) {
           ["Why it failed", f.reason],
           ["Payload summary", f.payload_summary],
           ["Response excerpt", f.response_excerpt],
-          ["Remediation", f.remediation]
+          ["How to fix", f.remediation]
         ];
         for (const pair of rows) {
           if (!pair[1]) continue;
@@ -474,12 +658,127 @@ function renderReport(report) {
       wrap.appendChild(group);
     }
   }
+  const allWrap = $("all-probes-wrap");
+  allWrap.innerHTML = "";
+  const table = document.createElement("table");
+  table.innerHTML = "<thead><tr><th>Probe</th><th>Pack</th><th>Severity</th>" +
+    "<th>Status</th><th>Detail</th></tr></thead>";
+  const tbody = document.createElement("tbody");
+  for (const r of report.results) {
+    const tr = document.createElement("tr");
+    const cells = [r.probe_id + ": " + (r.name || ""),
+      PACK_LABELS[r.category] || r.category, r.severity, r.status,
+      r.reason || ""];
+    cells.forEach((text, i) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      if (i === 3) td.className = "status-" + r.status;
+      if (i === 4) td.className = "excerpt";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  allWrap.appendChild(table);
+  $("all-probes").querySelector("summary").textContent =
+    "All probe results (" + report.results.length + ": passed, failed and errored)";
   $("results").style.display = "block";
   $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (save) saveToHistory(report);
+}
+
+/* Scan history: last 10 reports in localStorage. Reports never contain
+   the API key, so nothing secret is persisted. */
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) { return []; }
+}
+
+function saveToHistory(report) {
+  const sev = severityCounts(report);
+  let host = report.meta.host || report.meta.target || "";
+  const entry = {
+    date: report.meta.date, host: host, model: report.meta.model,
+    score: report.summary.posture_score,
+    grade: gradeBand(report.summary.posture_score).letter,
+    counts: report.summary.counts, sev: sev, report: report
+  };
+  let hist = [entry].concat(loadHistory()).slice(0, 10);
+  for (;;) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+      break;
+    } catch (e) {
+      if (hist.length <= 1) break;
+      hist = hist.slice(0, hist.length - 1);
+    }
+  }
+  renderHistory();
+}
+
+function renderHistory() {
+  const hist = loadHistory();
+  const card = $("history-card");
+  if (!hist.length) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  const list = $("history-list");
+  list.innerHTML = "";
+  hist.forEach((entry, idx) => {
+    const row = document.createElement("div");
+    row.className = "history-row";
+    const when = document.createElement("span");
+    when.className = "when";
+    when.textContent = new Date(entry.date).toLocaleString();
+    const what = document.createElement("span");
+    what.className = "what";
+    what.textContent = entry.host + " | " + entry.model;
+    const score = document.createElement("span");
+    score.className = "score";
+    score.textContent = "Score " + entry.score.toFixed(1) +
+      " (grade " + entry.grade + ") | " +
+      entry.sev.critical + " critical, " + entry.sev.high + " high, " +
+      entry.sev.medium + " medium, " + entry.sev.low + " low failed";
+    row.appendChild(when);
+    row.appendChild(what);
+    row.appendChild(score);
+    const view = document.createElement("button");
+    view.type = "button";
+    view.className = "secondary small";
+    view.textContent = "View";
+    view.addEventListener("click", () => {
+      renderReport(entry.report, false);
+    });
+    const dlJson = document.createElement("button");
+    dlJson.type = "button";
+    dlJson.className = "secondary small";
+    dlJson.textContent = "JSON";
+    dlJson.addEventListener("click", () => {
+      download("llmposture-report.json",
+               JSON.stringify(entry.report, null, 2), "application/json");
+    });
+    const dlHtml = document.createElement("button");
+    dlHtml.type = "button";
+    dlHtml.className = "secondary small";
+    dlHtml.textContent = "HTML";
+    dlHtml.addEventListener("click", () => {
+      download("llmposture-report.html", reportToHtml(entry.report), "text/html");
+    });
+    row.appendChild(view);
+    row.appendChild(dlJson);
+    row.appendChild(dlHtml);
+    list.appendChild(row);
+  });
 }
 
 function reportToHtml(report) {
   const meta = report.meta, s = report.summary, counts = s.counts;
+  const grade = gradeBand(s.posture_score);
+  const topRisks = report.findings.slice(0, 3).map((f) =>
+    "<li>" + esc(f.probe_id) + ": " + esc(f.name) + " (" + esc(f.category) +
+    ", " + esc(f.severity) + ")</li>").join("");
   const catRows = Object.keys(s.per_category).sort().map((name) => {
     const c = s.per_category[name];
     return "<tr><td>" + esc(name) + "</td><td>" + c.pass + "</td><td>" +
@@ -491,24 +790,40 @@ function reportToHtml(report) {
     esc(f.category) + " (" + esc(f.owasp) + ")<br><strong>Why it failed:</strong> " +
     esc(f.reason) + "<br><strong>Payload summary:</strong> " +
     esc(f.payload_summary) + "<br><strong>Response excerpt:</strong> " +
-    esc(f.response_excerpt) + "<br><strong>Remediation:</strong> " +
+    esc(f.response_excerpt) + "<br><strong>How to fix:</strong> " +
     esc(f.remediation) + "</p></section>").join("")
     : "<p>No findings. Every probe was resisted.</p>";
+  const resultRows = report.results.map((r) =>
+    "<tr><td>" + esc(r.probe_id) + ": " + esc(r.name) + "</td><td>" +
+    esc(r.category) + "</td><td>" + esc(r.severity) + "</td><td>" +
+    esc(r.status) + "</td><td>" + esc(r.reason) + "</td></tr>").join("");
   return "<!DOCTYPE html>\n<html lang='en'><head><meta charset='utf-8'>" +
     "<title>LLMPosture scan report</title><style>body{font-family:-apple-system," +
     "'Segoe UI',Roboto,Helvetica,Arial,sans-serif;max-width:900px;margin:24px auto;" +
     "padding:0 16px;color:#1a2332;line-height:1.5}table{border-collapse:collapse}" +
     "td,th{border:1px solid #d9e0ea;padding:6px 10px;text-align:left}" +
     ".finding{border:1px solid #d9e0ea;border-radius:8px;padding:10px 14px;" +
-    "margin:10px 0}h3{margin:4px 0}</style></head><body>" +
-    "<h1>LLMPosture scan report</h1><p>Target: " + esc(meta.target) +
-    "<br>Model: " + esc(meta.model) + "<br>Date (UTC): " + esc(meta.date) +
-    "<br>Posture score: <strong>" + s.posture_score + " / 100</strong> (" +
-    counts.fail + " failed, " + counts.pass + " passed, " + counts.error +
-    " errors, " + s.total_probes + " probes)</p>" +
+    "margin:10px 0}h3{margin:4px 0}.summary{border:2px solid #1d4ed8;" +
+    "border-radius:10px;padding:14px 18px;margin:14px 0}</style></head><body>" +
+    "<h1>LLMPosture scan report</h1>" +
+    "<div class='summary'><p style='font-size:20px;margin:4px 0'>" +
+    "<strong>Posture score: " + s.posture_score + " / 100, grade " +
+    grade.letter + " (" + grade.label + ")</strong></p>" +
+    (topRisks ? "<p><strong>Top risks:</strong></p><ol>" + topRisks + "</ol>" : "") +
+    "</div>" +
+    "<p>Target: " + esc(meta.target) + "<br>Model: " + esc(meta.model) +
+    "<br>Date (UTC): " + esc(meta.date) +
+    (meta.duration_seconds != null ?
+      "<br>Scan duration: " + esc(meta.duration_seconds) + " seconds" : "") +
+    (meta.version ? "<br>Scanner version: LLMPosture " + esc(meta.version) : "") +
+    "<br>" + counts.fail + " failed, " + counts.pass + " passed, " +
+    counts.error + " errors, " + s.total_probes + " probes</p>" +
     "<h2>Results by category</h2><table><tr><th>Category</th><th>Pass</th>" +
     "<th>Fail</th><th>Error</th><th>Total</th></tr>" + catRows + "</table>" +
     "<h2>Findings</h2>" + findingBlocks +
+    "<h2>All probe results</h2><table><tr><th>Probe</th><th>Category</th>" +
+    "<th>Severity</th><th>Status</th><th>Detail</th></tr>" + resultRows +
+    "</table>" +
     "<h2>Method and limits</h2><p>Probes use benign canaries generated per run: " +
     "a protected marker token, a planted fake API key, and a planted fake customer " +
     "record. A probe fails only when the target produces a canary, leaks planted " +
@@ -532,6 +847,7 @@ async function runMock(target) {
   setBusy(true);
   $("scan-error").style.display = "none";
   showProgress(0, 1, "Scanning mock-" + target + " (demo)...");
+  const started = performance.now();
   try {
     const resp = await fetch("/api/scan/mock", {
       method: "POST",
@@ -543,8 +859,12 @@ async function runMock(target) {
     report.results = report.results.map(enrich);
     report.findings = report.findings.map((f) =>
       enrich(Object.assign({ status: "fail" }, f)));
+    report.meta.version = scannerVersion || report.meta.version || "unknown";
+    report.meta.duration_seconds =
+      Math.round((performance.now() - started) / 100) / 10;
+    report.meta.host = report.meta.target;
     showProgress(1, 1, "Done.");
-    renderReport(report);
+    renderReport(report, true);
   } catch (err) {
     $("scan-error").textContent = "The demo scan failed: " + err.message;
     $("scan-error").style.display = "block";
@@ -563,6 +883,12 @@ async function runScan() {
   errBox.style.display = "none";
   if (!baseUrl || !model) {
     errBox.textContent = "Endpoint URL and model are both required.";
+    errBox.style.display = "block";
+    return;
+  }
+  if (refreshLocalGuidance()) {
+    errBox.textContent = "That is a local or private address; see the guidance " +
+      "box above for the two ways to scan it.";
     errBox.style.display = "block";
     return;
   }
@@ -587,6 +913,7 @@ async function runScan() {
   setBusy(true);
   scanCancelled = false;
   scanAbort = new AbortController();
+  const started = performance.now();
   const results = [];
   const counts = { pass: 0, fail: 0, error: 0 };
   showProgress(0, probeIds.length,
@@ -611,10 +938,13 @@ async function runScan() {
       });
       if (!resp.ok) {
         let detail = "HTTP " + resp.status;
-        try { detail += ": " + (await resp.json()).detail; } catch (e) { /* keep default */ }
-        throw new Error(detail);
+        try { detail = (await resp.json()).detail || detail; } catch (e) { /* keep default */ }
+        const err = new Error(detail);
+        err.status = resp.status;
+        throw err;
       }
       const data = await resp.json();
+      if (data.version) scannerVersion = data.version;
       for (const r of data.results) {
         const item = enrich(r);
         results.push(item);
@@ -622,11 +952,17 @@ async function runScan() {
       }
     } catch (err) {
       if (err.name === "AbortError") { scanCancelled = true; break; }
+      let reason = "batch request failed: " + err.message;
+      if (err.status === 429) {
+        reason = "The hosted scanner's own rate limit was reached (too many " +
+          "batch scans from this network). Wait a few minutes and retry, or " +
+          "run the CLI locally.";
+      }
       for (const id of batch) {
         const meta = catalogueById[id] || {};
         results.push(enrich({ probe_id: id, name: meta.title,
           category: meta.pack, owasp: meta.owasp, severity: meta.severity,
-          status: "error", reason: "batch request failed: " + err.message,
+          status: "error", error_kind: "service", reason: reason,
           payload_summary: "", response_excerpt: "", turns_sent: 0 }));
         counts.error += 1;
       }
@@ -638,9 +974,14 @@ async function runScan() {
   hideProgress();
   setBusy(false);
   if (results.length) {
+    let host = baseUrl;
+    try { host = new URL(baseUrl).host; } catch (e) { /* keep raw text */ }
     const label = baseUrl + " model=" + model + " adapter=" + adapter +
       (scanCancelled ? " (scan cancelled early)" : "");
-    renderReport(assembleReport(results, label, model));
+    renderReport(assembleReport(results, label, model, {
+      host: host,
+      duration_seconds: Math.round((performance.now() - started) / 100) / 10
+    }), true);
   } else if (scanCancelled) {
     errBox.textContent = "Scan cancelled before any probe completed.";
     errBox.style.display = "block";
@@ -654,6 +995,10 @@ $("btn-cancel").addEventListener("click", () => {
   scanCancelled = true;
   if (scanAbort) scanAbort.abort();
 });
+$("btn-clear-history").addEventListener("click", () => {
+  try { localStorage.removeItem(HISTORY_KEY); } catch (e) { /* ignore */ }
+  renderHistory();
+});
 $("btn-download-json").addEventListener("click", () => {
   if (!lastReport) return;
   download("llmposture-report.json", JSON.stringify(lastReport, null, 2),
@@ -664,6 +1009,9 @@ $("btn-download-html").addEventListener("click", () => {
   download("llmposture-report.html", reportToHtml(lastReport), "text/html");
 });
 
+fetch("/api/health").then((r) => r.json())
+  .then((data) => { scannerVersion = data.version || ""; })
+  .catch(() => { /* batch responses also carry the version */ });
 fetch("/api/probes").then((r) => r.json())
   .then((data) => {
     catalogue = data.probes;
@@ -675,6 +1023,7 @@ fetch("/api/probes").then((r) => r.json())
   })
   .catch(() => { /* the Scan handler reports a clear error if still empty */ });
 refreshAutoLabel();
+renderHistory();
 </script>
 </body>
 </html>

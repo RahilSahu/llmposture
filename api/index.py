@@ -9,7 +9,10 @@ API around the ``llmposture`` scanner package:
 - ``POST /api/scan/mock``   a full scan against a built-in mock target
 - ``POST /api/scan/probe``  one probe against a caller-supplied endpoint
 - ``POST /api/scan/batch``  up to 10 probes against a caller-supplied
-  endpoint, the endpoint the "Scan your LLM" flow in the UI is built on
+  endpoint, the endpoint the "Scan your LLM" flow in the UI is built on;
+  with ``adapter: "mock"`` it runs the built-in mock targets through the
+  same batch path (model "weak" or "strict"), which is how the deployed
+  batch flow is verified end to end
 
 The browser drives a full scan in batches because serverless functions
 are short lived: each batch runs a handful of probes concurrently inside
@@ -96,7 +99,7 @@ BATCH_PER_CALL_TIMEOUT = _env_float("LLMPOSTURE_BATCH_PER_CALL_TIMEOUT",
                                     30.0)
 BATCH_DEADLINE_SECONDS = _env_float("LLMPOSTURE_BATCH_DEADLINE_SECONDS",
                                     50.0)
-BATCH_ADAPTERS = ("openai", "anthropic", "gemini", "ollama")
+BATCH_ADAPTERS = ("openai", "anthropic", "gemini", "ollama", "mock")
 
 # Best-effort per-IP rate limit for the batch endpoint. The counters live
 # in process memory, and serverless processes are short lived and not
@@ -287,12 +290,41 @@ class ProbeRequest(BaseModel):
     api_key: str | None = None
 
 
+def _classify_error(reason: str) -> str | None:
+    """Map a probe error message to a stable kind for the UI.
+
+    The UI turns each kind into a specific human explanation (check the
+    key, check the model name, wait out the rate limit, and so on)
+    instead of showing a generic failure. Kinds: "auth", "not_found",
+    "rate_limited", "dns", "timeout", "unreachable", "other".
+    """
+    if not reason:
+        return None
+    text = reason.lower()
+    if "http 401" in text or "http 403" in text:
+        return "auth"
+    if "http 404" in text:
+        return "not_found"
+    if "http 429" in text:
+        return "rate_limited"
+    if ("name or service not known" in text or "could not resolve" in text
+            or "getaddrinfo" in text or "name resolution" in text):
+        return "dns"
+    if "timed out" in text or "timeout" in text or "time limit" in text:
+        return "timeout"
+    if "connection refused" in text or "could not reach" in text:
+        return "unreachable"
+    return "other"
+
+
 def _result_payload(result, probe) -> dict:
     return {
         "probe_id": result.probe_id, "name": result.name,
         "category": result.category, "owasp": result.owasp,
         "severity": result.severity, "status": result.status,
         "reason": result.reason,
+        "error_kind": (_classify_error(result.reason)
+                       if result.status == "error" else None),
         "payload_summary": result.payload_summary,
         "response_excerpt": result.response_excerpt,
         "turns_sent": result.turns_sent,
@@ -446,16 +478,25 @@ def scan_batch(req: BatchRequest, request: Request) -> dict:
         if probe_id not in seen:
             seen.add(probe_id)
             wanted.append(catalogue[probe_id])
-    base_url = _effective_base_url(spec)
-    if spec.adapter == "openai" and not base_url:
-        raise HTTPException(
-            status_code=400, detail="base_url is required")
-    try:
-        validate_target_url(base_url)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
-    target = _build_batch_target(spec, base_url)
     canaries = CanarySet.generate()
+    if spec.adapter == "mock":
+        mode = spec.model.strip()
+        if mode not in ("weak", "strict"):
+            raise HTTPException(
+                status_code=400,
+                detail="for the mock adapter, model must be 'weak' or "
+                       "'strict'")
+        target = MockTarget(mode, canaries)
+    else:
+        base_url = _effective_base_url(spec)
+        if spec.adapter == "openai" and not base_url:
+            raise HTTPException(
+                status_code=400, detail="base_url is required")
+        try:
+            validate_target_url(base_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        target = _build_batch_target(spec, base_url)
     results = _run_batch(target, wanted, canaries,
                          default_system_prompt(canaries))
     key = spec.api_key or None
@@ -466,4 +507,5 @@ def scan_batch(req: BatchRequest, request: Request) -> dict:
             for field in ("reason", "payload_summary", "response_excerpt"):
                 item[field] = _scrub(item[field], key)
         payload.append(item)
-    return {"results": payload, "count": len(payload)}
+    return {"results": payload, "count": len(payload),
+            "version": __version__}

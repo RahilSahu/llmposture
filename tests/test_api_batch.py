@@ -248,3 +248,63 @@ def test_batch_rate_limit(monkeypatch):
         assert resp.status_code == 200
     resp = client.post("/api/scan/batch", json=_batch_body(["DI-001"]))
     assert resp.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# Mock adapter through the batch path, and error classification
+# ---------------------------------------------------------------------------
+
+def test_batch_mock_adapter_weak_fails_and_strict_passes():
+    for mode, expected in (("weak", "fail"), ("strict", "pass")):
+        resp = client.post("/api/scan/batch", json={
+            "target": {"base_url": "", "model": mode, "api_key": None,
+                       "adapter": "mock"},
+            "probe_ids": ["DI-001", "DI-002"]})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["version"] == "1.3.0"
+        assert all(r["status"] == expected for r in body["results"])
+
+
+def test_batch_mock_adapter_rejects_bad_mode():
+    resp = client.post("/api/scan/batch", json={
+        "target": {"base_url": "", "model": "medium", "api_key": None,
+                   "adapter": "mock"},
+        "probe_ids": ["DI-001"]})
+    assert resp.status_code == 400
+
+
+class _AuthErrorTarget:
+    def __init__(self, **kwargs):
+        pass
+
+    def chat(self, messages):
+        raise TargetError("HTTP 401 from provider: invalid api key")
+
+
+def test_batch_error_results_carry_a_classified_kind(monkeypatch):
+    monkeypatch.setattr(api, "OpenAICompatibleTarget", _AuthErrorTarget)
+    resp = client.post("/api/scan/batch", json=_batch_body(["DI-001"]))
+    assert resp.status_code == 200
+    result = resp.json()["results"][0]
+    assert result["status"] == "error"
+    assert result["error_kind"] == "auth"
+
+
+def test_classify_error_kinds():
+    cases = {
+        "HTTP 401 from https://x: bad key": "auth",
+        "HTTP 403 from https://x: forbidden": "auth",
+        "HTTP 404 from https://x: model not found": "not_found",
+        "HTTP 429 from https://x: slow down": "rate_limited",
+        "could not reach https://x: [Errno -2] Name or service not known":
+            "dns",
+        "could not reach https://x: timed out": "timeout",
+        "probe exceeded the batch time limit": "timeout",
+        "could not reach https://x: [Errno 111] Connection refused":
+            "unreachable",
+        "something entirely unexpected": "other",
+    }
+    for reason, kind in cases.items():
+        assert api._classify_error(reason) == kind, reason
+    assert api._classify_error("") is None

@@ -121,9 +121,19 @@ The scanner also runs as a web app: **https://llmposture.vercel.app**
 - "Scan your LLM" is the main flow: paste an endpoint URL, pick the
   model, optionally add an API key, choose probe packs, confirm you own
   the endpoint or are authorised to test it, and the full 76-probe suite
-  runs against it. Findings come back grouped by pack with the OWASP
-  mapping, the evidence excerpt, and remediation guidance, and the
-  report downloads as JSON or HTML.
+  runs against it. Provider presets (OpenAI, Anthropic, Google Gemini,
+  Groq, OpenRouter, xAI Grok, Ollama, or custom) pre-fill the base URL
+  and adapter and show common model names as examples. Results show a
+  grade band and the top risks; findings come back grouped by pack with
+  the OWASP mapping, the evidence excerpt, and remediation guidance;
+  errored probes are explained in plain terms (rejected key, unknown
+  model, provider rate limit, timeout, DNS failure, unreachable host)
+  instead of failing the whole scan; and the results view and both
+  downloadable reports carry a row for every probe run, plus the target,
+  model, scan duration, and scanner version. Reports download as JSON
+  or HTML, and the last 10 scans are kept in the browser's local
+  storage (never the API key) so a past report can be re-downloaded
+  without rescanning.
 - Endpoints: any OpenAI-compatible chat completions endpoint works
   directly (OpenAI, xAI Grok, OpenRouter, Groq, a hosted vLLM), and
   native adapters cover Anthropic, Google Gemini, and Ollama. The
@@ -150,10 +160,23 @@ The scanner also runs as a web app: **https://llmposture.vercel.app**
   and cloud metadata hostnames, and outbound redirects are disabled so a
   target cannot bounce a scan to a different host after validation. A
   consequence: the hosted scanner cannot scan localhost or
-  private-network models. Run the web app locally for those; a
-  documented environment variable (`LLMPOSTURE_ALLOW_PRIVATE_TARGETS=1`)
-  relaxes the guard for local development only and must never be set on
-  a public deployment. Batch scans also carry a best-effort per-IP rate
+  private-network models, and the page says so up front when it sees a
+  local address instead of failing mid-scan. To scan a local endpoint,
+  either run the same scan with the CLI on the machine where the model
+  runs:
+
+  ```bash
+  pip install git+https://github.com/RahilSahu/llmposture
+  llmposture scan --target openai-compatible --base-url http://localhost:11434/v1 --model llama3.2:1b
+  ```
+
+  (use your own base URL and model; add `--api-key-env YOUR_KEY_ENV_VAR`
+  for a key-protected endpoint), or expose the endpoint through a
+  public tunnel such as ngrok or cloudflared and paste the public
+  tunnel URL into the hosted scanner. When the web app itself is
+  self-hosted for local use, a documented environment variable
+  (`LLMPOSTURE_ALLOW_PRIVATE_TARGETS=1`) relaxes the guard; it must
+  never be set on a public deployment. Batch scans also carry a best-effort per-IP rate
   limit (30 batch calls per 10 minutes); the counters are in-memory, so
   on serverless infrastructure this blunts casual abuse rather than
   enforcing a hard quota. A probe that runs longer than the batch
@@ -163,7 +186,9 @@ The scanner also runs as a web app: **https://llmposture.vercel.app**
 The web app is a thin layer over the same package: `api/index.py` is a
 FastAPI entrypoint that imports `llmposture` and serves the UI, with
 endpoints for the probe catalogue, full mock scans, single-probe scans,
-and batch scans. It adds no probes and changes no scoring.
+and batch scans (the batch endpoint also runs the built-in mock
+targets through the same path when the adapter is "mock"). It adds no
+probes and changes no scoring.
 
 ## Probe packs
 

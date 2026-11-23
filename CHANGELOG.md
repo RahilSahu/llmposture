@@ -6,17 +6,33 @@
   URL and model, optionally add an API key, pick probe packs, confirm
   you own the endpoint or are authorised to test it, and the full suite
   runs against it with live progress, running pass/fail counts, and a
-  cancel button. Adapters: OpenAI-compatible plus native Anthropic,
-  Gemini and Ollama, auto-detected from the URL with a manual override.
-  Findings are grouped by pack and expandable with the OWASP mapping,
-  the evidence excerpt, and remediation guidance; reports download as
-  JSON or HTML, generated client-side, and never contain the API key.
+  cancel button. Provider presets (OpenAI, Anthropic, Google Gemini,
+  Groq, OpenRouter, xAI Grok, Ollama, custom) pre-fill the base URL and
+  adapter and show common model names as examples; the adapter is also
+  auto-detected from the URL with a manual override. Results show a
+  grade band and the top 3 risks; findings are grouped by pack and
+  expandable with the OWASP mapping, the evidence excerpt, and a
+  how-to-fix line. The results view and both downloadable reports
+  (JSON and HTML, generated client-side, never containing the API key)
+  carry a row for every probe run, passed, failed and errored, plus
+  the target, model, scan duration, and scanner version; the HTML
+  report opens with a one-screen summary header. The last 10 scans are
+  kept in the browser's local storage so a past report can be viewed
+  or re-downloaded without rescanning; API keys are never stored.
+  Entering a localhost or private-range URL shows guidance instead of
+  a failed scan: run the same scan with the CLI locally (the exact
+  command is shown), or expose the endpoint through a public tunnel.
   The built-in mock targets remain, labelled as demos.
 - API: new `POST /api/scan/batch` runs up to 10 probes per call against
   a caller-supplied target with bounded concurrency (4) and a per-batch
-  deadline, reusing the existing engine and adapters. The probe
-  catalogue now also carries each probe's description and remediation.
-  Existing endpoints are unchanged in shape.
+  deadline, reusing the existing engine and adapters; with adapter
+  "mock" it runs the built-in mock targets through the same batch path.
+  Errored probes carry a classified `error_kind` (auth, not_found,
+  rate_limited, dns, timeout, unreachable, other) that the UI turns
+  into a specific explanation and next step, and a failed batch never
+  kills the rest of the scan. The probe catalogue now also carries
+  each probe's description and remediation. Existing endpoints are
+  unchanged in shape.
 - Web safety: the batch endpoint is SSRF-guarded (http and https only,
   no embedded credentials, hosts must resolve only to public addresses;
   loopback, private, link-local, reserved and cloud metadata addresses
@@ -28,8 +44,9 @@
   self-hosted deployments; the public deployment runs the defaults
   (30 s per call, 50 s per batch).
 - Probe metadata: per-pack remediation guidance, shown in web reports.
-- 73 tests, 26 of them new for the batch endpoint, the SSRF guard, key
-  redaction, and rate limiting. Verified end to end locally: a full
+- 77 tests, 30 of them new for the batch endpoint (including the mock
+  adapter and error classification), the SSRF guard, key redaction,
+  and rate limiting. Verified end to end locally: a full
   76-probe scan driven through the web batch flow against llama3.2:1b
   on local Ollama scored 57.6 with 35 findings and no errors (batch
   time limits raised via the environment for the slow local machine,
